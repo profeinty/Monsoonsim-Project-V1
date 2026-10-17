@@ -363,9 +363,18 @@
     paint();
   };
 
-  /* 6. The box in the corner (built once; only its words change, so a button never moves under a click) */
+  /* 6. The panel (built once; only its words change, so a button never moves under a click). Drag it by its title bar; it
+     remembers where it was. Alt+F hides or shows it. Tabs: Live (the link), Today, Stores, Stock, Checks. It only reads. */
   host = document.createElement("div"); host.id = "ff-live";
   host.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:2147483647";
+  const POS = "ff-panel-pos";
+  let tab = "live", hidden = false;
+  try { const q = JSON.parse(localStorage.getItem(POS)); if (q && q.tab) tab = q.tab; if (q && q.x != null) place(q.x, q.y); } catch (e) {}
+  function place(x, y){
+    x = Math.max(0, Math.min(x, innerWidth - 60)); y = Math.max(0, Math.min(y, innerHeight - 40));
+    Object.assign(host.style, {left: x + "px", top: y + "px", right: "auto", bottom: "auto"});
+  }
+  const keep = () => { try { const r = host.getBoundingClientRect(); localStorage.setItem(POS, JSON.stringify({x: host.style.left ? r.left : null, y: r.top, tab})); } catch (e) {} };
   const root = host.attachShadow({mode: "open"});
   document.body.appendChild(host);
   const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
@@ -374,19 +383,72 @@
       .h{display:flex;align-items:center;gap:6px}.h b{flex:1;font-weight:700}.x{border:0;background:none;cursor:pointer;font-size:16px;color:#18231E;padding:0 4px}
       p{margin:6px 0}p:empty{display:none}.m{color:#5a6660;font-size:12px}.w{color:#9a3412}.ok{color:#15803d;font-weight:600}
       .r{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}button.a{border:1px solid #999;background:#fff;color:#18231E;border-radius:5px;padding:6px 10px;cursor:pointer}button.p{background:#B4451C;border-color:#B4451C;color:#fff;font-weight:600}button:disabled{opacity:.55;cursor:default}
+      .h{cursor:move;user-select:none;touch-action:none;margin:-10px -12px 0;padding:8px 12px;background:#B4451C;color:#fff;border-radius:5px 5px 0 0}.h .x{color:#fff}
+      .tabs{display:flex;gap:2px;margin:8px 0 2px;border-bottom:1px solid #D0D8D1}.tabs button{border:0;background:none;padding:5px 8px;cursor:pointer;color:#55655D;border-bottom:2px solid transparent;margin-bottom:-1px}.tabs button[aria-selected="true"]{color:#18231E;font-weight:600;border-bottom-color:#B4451C}
+      .pane{max-height:min(320px,55vh);overflow:auto}table{border-collapse:collapse;width:100%;margin-top:4px}td,th{padding:3px 4px;border-top:1px solid #E2E7E1;text-align:left;vertical-align:top}th{font-size:11px;color:#55655D;font-weight:600}td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+      .bar{height:6px;background:#E2E7E1;border-radius:3px;overflow:hidden;margin-top:2px}.bar i{display:block;height:100%;background:#2A7546}.bar i.hi{background:#B2261E}
+      ul{margin:4px 0;padding-left:18px}li{margin:3px 0}.k{color:#55655D;font-size:11px}
       .pill{display:inline-flex;gap:6px;align-items:center;background:#FAFBF8;color:#18231E;border:2px solid #B4451C;border-radius:999px;padding:6px 12px;cursor:pointer;font-weight:600}
       @media (pointer:coarse){button.a{min-height:42px;padding:8px 14px}.x{min-width:40px;min-height:40px}.pill{min-height:42px}}
 </style>`;
+  const TABS = [["live", "Live"], ["today", "Today"], ["stores", "Stores"], ["stock", "Stock"], ["checks", "Checks"]];
+  const n = v => v == null || isNaN(v) ? "–" : Number(v).toLocaleString();
+  const none = '<p class="m">Nothing read yet. Wait for the first read, or press Read now.</p>';
+  const paneToday = () => !D ? none : `<table>
+      <tr><td>Day</td><td class="n">${n(D.day)}${D.maxDay ? " / " + n(D.maxDay) : ""}</td></tr>
+      ${D.maxDay ? `<tr><td>Days left</td><td class="n">${n(D.maxDay - D.day)}</td></tr>` : ""}
+      <tr><td>Cash in bank</td><td class="n">${n(D.cash)}</td></tr>
+      <tr><td>Overdraft used</td><td class="n">${n(D.odUsed)}</td></tr>
+      <tr><td>Delinquent payouts</td><td class="n">${n(D.delinq)}</td></tr>
+      <tr><td>Stores · warehouses</td><td class="n">${(D.stores || []).length} · ${(D.warehouses || []).length}</td></tr></table>
+      <p class="k">The full plan for today is on the FF calculator.</p>`;
+  const paneStores = () => !D || !(D.stores || []).length ? none : D.stores.map(st => {
+      const pc = st.area ? Math.round(100 * st.used / st.area) : null;
+      return `<p><b>${esc(st.name)}</b> <span class="k">${pc == null ? "" : pc + "% full · " + n(st.used) + " / " + n(st.area)}</span></p>
+        ${pc == null ? "" : `<div class="bar"><i class="${pc >= 90 ? "hi" : ""}" style="width:${Math.min(100, pc)}%"></i></div>`}
+        <table><tr><th>Item</th><th class="n">Price</th><th class="n">Qty</th></tr>${(st.items || []).map(it => `<tr><td>${esc(it.name)}</td><td class="n">${n(it.price)}</td><td class="n">${n(it.qty)}</td></tr>`).join("")}</table>`;
+    }).join("");
+  const paneStock = () => !D || !(D.warehouses || []).length ? none : D.warehouses.map(w =>
+      `<p><b>${esc(w.name)}</b> <span class="k">${n(w.machines)} machines</span></p>
+      <table><tr><th>Item</th><th class="n">Qty</th></tr>${(w.items || []).map(it => `<tr><td>${esc(it.name)}</td><td class="n">${n(it.qty)}</td></tr>`).join("")}</table>`).join("");
+  const paneChecks = () => {
+    if (!D) return none;
+    const c = [];
+    if (D.delinq > 0) c.push(`Delinquent payouts: <b>${n(D.delinq)}</b>. These cost you; pay them first.`);
+    if (D.odUsed > 0) c.push(`Overdraft in use: <b>${n(D.odUsed)}</b>.`);
+    for (const st of D.stores || []) {
+      const pc = st.area ? Math.round(100 * st.used / st.area) : 0;
+      if (pc >= 90) c.push(`<b>${esc(st.name)}</b> is ${pc}% full.`);
+      for (const it of st.items || []) if (it.qty === 0) c.push(`<b>${esc(st.name)}</b> is out of ${esc(it.name)}.`);
+    }
+    if (D.maxDay && D.maxDay - D.day <= 5) c.push(`Only ${n(D.maxDay - D.day)} days left.`);
+    return (c.length ? `<ul>${c.map(x => `<li>${x}</li>`).join("")}</ul>` : '<p class="ok">Nothing flagged right now.</p>') + '<p class="k">Quick checks only. The FF calculator has the full plan.</p>';
+  };
+  let drag = null;
+  root.addEventListener("pointerdown", e => {
+    const h = e.target.closest(".h"); if (!h || e.target.closest("button")) return;
+    const r = host.getBoundingClientRect(); drag = {dx: e.clientX - r.left, dy: e.clientY - r.top};
+    try { h.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault();
+  });
+  root.addEventListener("pointermove", e => { if (drag) place(e.clientX - drag.dx, e.clientY - drag.dy); });
+  const endDrag = () => { if (drag) { drag = null; keep(); } };
+  root.addEventListener("pointerup", endDrag); root.addEventListener("pointercancel", endDrag);
+  const onKey = e => { if (e.altKey && !e.ctrlKey && !e.metaKey && (e.code === "KeyF")) { e.preventDefault(); hidden = !hidden; paint(); } };
+  document.addEventListener("keydown", onKey, true);
   let shape = "";
   function paint(){
     if (!host) return;
     const ok = link.state === "linked", day = esc((D && D.day) || seenDay || "…");
     if (shape !== (mini ? "mini" : "box")) {
       shape = mini ? "mini" : "box";
-      root.innerHTML = CSS + (mini ? `<button class="pill" data-a="max"></button>` : `<div class="b"><div class="h"><b data-f="title"></b><button class="x" data-a="min" title="Minimise">–</button><button class="x" data-a="stop" title="Stop reading">×</button></div>
-      <p data-f="link"></p><p class="m" data-f="speed"></p><p class="m" data-f="info"></p><p class="w" data-f="stale"></p><p class="m" role="status" data-f="msg"></p>
+      root.innerHTML = CSS + (mini ? `<button class="pill" data-a="max"></button>` : `<div class="b"><div class="h"><b data-f="title"></b><button class="x" data-a="min" title="Minimise (Alt+F hides)">–</button><button class="x" data-a="stop" title="Stop reading">×</button></div>
+      <div class="tabs" role="tablist">${TABS.map(([k, n]) => `<button role="tab" data-tab="${k}">${n}</button>`).join("")}</div>
+      <div class="pane" data-t="live"><p data-f="link"></p><p class="m" data-f="speed"></p><p class="m" data-f="info"></p><p class="w" data-f="stale"></p></div>
+      <div class="pane" data-t="today" data-f="today"></div><div class="pane" data-t="stores" data-f="stores"></div><div class="pane" data-t="stock" data-f="stock"></div><div class="pane" data-t="checks" data-f="checks"></div>
+      <p class="m" role="status" data-f="msg"></p>
       <div class="r"><button class="a p" data-a="copy">Copy data</button><button class="a" data-a="read">Read now</button><button class="a" data-a="setup">Update setup</button></div></div>`);
     }
+    host.style.display = hidden ? "none" : "";
     const put = (f, html) => { const el = root.querySelector(f); if (el && el.__h !== html) { el.__h = html; el.innerHTML = html; } };
     if (mini) { put(".pill", `FF live${TAG ? " " + esc(TAG) : ""} · day ${day} ${ok ? "✓" : ""}`); return; }
     put('[data-f="title"]', `FF live${TAG ? " · Mode " + esc(TAG) : ""} · day ${day}${D && D.maxDay ? "/" + esc(D.maxDay) : ""}`);
@@ -395,13 +457,20 @@
       : lap.read ? `Day ${esc(lap.day)}: sales read ${after(lap.read - lap.seen)}.` : "");
     put('[data-f="info"]', D && D.at ? `Last change ${esc(new Date(D.at).toLocaleTimeString())} · ${(D.stores || []).length} stores · sales: ${esc(D.salesFrom || "not found yet")}` : "Starting…");
     put('[data-f="stale"]', stale && busy !== "setup" ? `${esc(stale[0].toUpperCase() + stale.slice(1))}. The setup is read again when you stop clicking for 20 s, or now:` : "");
+    for (const el of root.querySelectorAll("[data-tab]")) el.setAttribute("aria-selected", el.dataset.tab === tab);
+    for (const el of root.querySelectorAll("[data-t]")) el.hidden = el.dataset.t !== tab;
+    if (tab === "today") put('[data-f="today"]', paneToday());
+    if (tab === "stores") put('[data-f="stores"]', paneStores());
+    if (tab === "stock") put('[data-f="stock"]', paneStock());
+    if (tab === "checks") put('[data-f="checks"]', paneChecks());
     put('[data-f="msg"]', esc(note && Date.now() - noteAt < 6000 ? note : msg));
     root.querySelector('[data-a="copy"]').disabled = !ready;
     for (const k of ["read", "setup"]) root.querySelector(`[data-a="${k}"]`).disabled = busy === "setup";
   }
   root.addEventListener("click", async e => {
-    const a = e.target.closest("[data-a]"); if (!a) return;
+    const a = e.target.closest("[data-a],[data-tab]"); if (!a) return;
     const k = a.dataset.a, tell = m => { note = m; noteAt = Date.now(); paint(); };
+    if (a.dataset.tab) { tab = a.dataset.tab; keep(); paint(); return; }
     if (k === "min" || k === "max") { mini = k === "min"; paint(); return; }
     if (k === "stop") { stop(); log("Stopped. Paste the reader again to restart."); return; }
     if (k === "read") { wantFull = true; tell("Reading everything again…"); return; }
@@ -497,6 +566,7 @@
     stopped = true; clearInterval(timer); try { beat?.terminate(); } catch (e) {} if (beatUrl) URL.revokeObjectURL(beatUrl);
     window.removeEventListener("message", onMsg);
     EVENTS.forEach(t => document.removeEventListener(t, touched, true));
+    document.removeEventListener("keydown", onKey, true);
     for (const w of waits) w.go(); waits.clear();
     host?.remove(); host = null; if (window.__ff && window.__ff.timer === timer) delete window.__ff;
   }
