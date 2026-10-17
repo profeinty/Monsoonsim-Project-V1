@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FF live bookmark</title>
+<style>
+:root{--bg:#ECEFEA;--panel:#FAFBF8;--ink:#17221D;--muted:#55655D;--line:#D0D8D1;--accent:#B4451C;--accent-ink:#fff;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#0F1412;--panel:#161D1A;--ink:#E3EAE5;--muted:#95A59D;--line:#29342F;--accent:#EE7A45;--accent-ink:#1A0E08;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:640px;margin:0 auto;padding:28px 16px 48px;display:flex;flex-direction:column;gap:16px}
+h1{margin:0;font-size:1.4rem}
+section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+h2{margin:0 0 8px;font-size:1rem}
+p,ol{margin:0}
+ol{padding-left:1.2em}
+.row{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+a.bm{display:inline-block;font-weight:650;color:var(--accent);border:1.5px dashed var(--accent);border-radius:8px;padding:6px 12px;text-decoration:none;cursor:grab}
+button{font:600 .9rem system-ui,sans-serif;background:var(--accent);color:var(--accent-ink);border:0;border-radius:8px;padding:8px 12px;cursor:pointer}
+.hint{font-size:.85rem;color:var(--muted)}
+code{font-size:.8rem;word-break:break-all}
+</style>
+</head>
+<body>
+<main>
+  <h1>FF live bookmark</h1>
+  <p class="hint">One click in your MonsoonSIM tab starts the FF game reader. The bookmark always loads the newest reader from this site, so you never have to remake it when the reader changes. It only reads the game.</p>
+
+  <section>
+    <h2>On a computer</h2>
+    <p>Drag the one for your mode to the bookmarks bar (press Ctrl+Shift+B if you can't see the bar).</p>
+    <div class="row" id="drag"></div>
+  </section>
+
+  <section>
+    <h2>On a tablet or phone</h2>
+    <ol>
+      <li>Tap a copy button below.</li>
+      <li>Bookmark any page, then edit that bookmark: name it as shown and paste over its address.</li>
+      <li>On the game tab, open your bookmarks (Safari) or type the name in the address bar (Chrome) and tap it.</li>
+    </ol>
+    <div class="row" id="copy"></div>
+    <p class="hint" id="msg" role="status"></p>
+  </section>
+
+  <section>
+    <h2>Using it</h2>
+    <p>Open the calculator, press <b>Go live</b> so the game opens linked to it, then click the bookmark on the game tab. The reader box appears at the bottom right of the game.</p>
+    <p class="hint" style="margin-top:8px">If nothing happens, the game page may block outside scripts. Use the Console way in the calculator instead (Copy game reader, paste in the Console).</p>
+  </section>
+</main>
+<script>
+const SRC = new URL("reader.js", location.href).href;   // wherever this page is hosted, reader.js sits next to it
+const MODES = ["12i", "14"];
+const bookmark = mode => "javascript:" + encodeURIComponent(
+  `(()=>{window.__FF_MODE=${JSON.stringify(mode)};var s=document.createElement("script");` +
+  `s.charset="utf-8";s.src=${JSON.stringify(SRC)}+"?t="+Date.now();` +
+  `s.onerror=function(){alert("FF live could not load the reader. The game may block outside scripts: use the Console way from the calculator.")};` +
+  `(document.head||document.documentElement).appendChild(s)})();void 0`);
+for (const m of MODES) {
+  const a = document.createElement("a");
+  a.className = "bm"; a.href = bookmark(m); a.textContent = "FF live " + m; a.title = "Drag me to your bookmarks bar";
+  a.addEventListener("click", e => { e.preventDefault(); document.getElementById("msg").textContent = "Drag it to the bookmarks bar instead of clicking it here."; });
+  document.getElementById("drag").append(a);
+  const b = document.createElement("button");
+  b.type = "button"; b.textContent = "Copy FF live " + m;
+  b.addEventListener("click", async () => {
+    const msg = document.getElementById("msg");
+    try { await navigator.clipboard.writeText(bookmark(m)); msg.textContent = `Copied. Paste it as the address of a bookmark named FF live ${m}.`; }
+    catch (_) { msg.innerHTML = ""; const c = document.createElement("code"); c.textContent = bookmark(m); msg.append("Copy this by hand: ", c); }
+  });
+  document.getElementById("copy").append(b);
+}
+</script>
+</body>
+</html>
