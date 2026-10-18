@@ -1,10 +1,10 @@
 (async () => {
-  /* FF game reader v4 (live): read-only. Reads this MonsoonSIM game, then follows it as it runs: a new day reaches the calculator
+  /* FF game reader v4 (live): reads this MonsoonSIM game, then follows it as it runs: a new day reaches the calculator
      within about a second, that day's sales a second or two later. Paste it again any time: it restarts cleanly and remembers
-     the game setup, so it starts in seconds. */
+     the game setup, so it starts in seconds. It only reads, unless you start Auto-click or the Bot (each off until you start it). */
   if (window.__ff && window.__ff.stop) window.__ff.stop();
   document.getElementById("ff-reader-box")?.remove();
-  const V = 4, BUILD = "v6", GAP = 900, CLICK = 1500;   // the game blocks fast clicks: page reads at least GAP ms apart, clicks in Configuration CLICK ms
+  const V = 4, BUILD = "v7", GAP = 900, CLICK = 1500;   // the game blocks fast clicks: page reads at least GAP ms apart, clicks in Configuration CLICK ms
   const MODE = String(window.__FF_MODE || ""), TAG = MODE;   // the calculator mode the bookmark was made for (Mode 12i or Mode 14), set by loader.js
   const log = m => console.log("%c[FF] " + m, "color:#B4451C;font-weight:bold");
   const toNum = s => s == null ? null : +String(s).replace(/[^\d.]/g, "");
@@ -30,18 +30,24 @@
      closer than the gap it refused (remembered for this game, up to 3 s) */
   let floor = Math.min(3000, Math.max(GAP, +mem.gapFloor || 0)), gap = floor, lastHit = 0, slowAt = 0, hits = 0;
   const pace = async (ms = gap) => { for (let w; (w = lastHit + ms - Date.now()) > 0;) await sleep(w); lastHit = Date.now(); };
-  const get = async url => {
+  const req = async (url, body) => {   // a GET, or a form POST (the bot) when there's a body: both in the same queue
+    if (/SPACE_CANCEL/i.test(url)) throw new Error("refused: that link cancels a rental");
+    if (body != null && new URL(url, location.href).origin !== location.origin) throw new Error("refused: not this game's address");
     for (let t = 0; ; t++) {
       await pace(); hits++;
       const ctl = typeof AbortController === "function" ? new AbortController() : null, to = ctl && setTimeout(() => ctl.abort(), 20000);
-      let h; try { h = await (await fetch(url, {credentials: "same-origin", signal: ctl ? ctl.signal : undefined})).text(); } finally { clearTimeout(to); }
+      const opt = {credentials: "same-origin", signal: ctl ? ctl.signal : undefined};
+      if (body != null) Object.assign(opt, {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body});
+      let h, ok = true; try { const r = await fetch(url, opt); ok = r.ok; h = await r.text(); } finally { clearTimeout(to); }
+      if (body != null && !ok) throw new Error("the game answered with an error page");
       if (h.length > 4000 || !/slow down|too fast/i.test(h)) { if (gap > floor && Date.now() - slowAt > 120000) gap = Math.max(floor, gap - 300); return h; }
       floor = Math.min(3000, Math.max(floor, gap + 300)); mem.gapFloor = floor; save();
       slowAt = Date.now(); gap = Math.min(Math.max(gap*2, floor), 6000); log(`The game asked to slow down: reading ${sec(gap)} apart for a while, then at least ${sec(floor)}.`);
-      if (t >= 2) return h;
+      if (t >= 2) { if (body != null) throw new Error("the game kept asking to slow down"); return h; }
       await sleep(3000);
     }
   };
+  const get = url => req(url), post = (url, body) => req(url, body);
   const page = async id => { const h = hrefOf($id(id)); if (!h) throw new Error("Menu " + id + " not found. Open your game page first."); return get(h); };
   const quiet = async (job, name) => { try { await job(); } catch (e) { if (name) log(name + ": " + e.message); } };
 
@@ -341,7 +347,9 @@
   const toCalc = m => { try { if (window.opener && !window.opener.closed) { window.opener.postMessage(m, link.origin); return true; } } catch (e) {} return false; };
   const hello = () => { link.helloAt = Date.now(); link.origin = "*"; toCalc({ff: "hello", v: V, mode: TAG}); };
   const onMsg = e => {
-    if (!window.opener || e.source !== window.opener || !e.data || e.data.ff !== "ack") return;
+    if (!window.opener || e.source !== window.opener || !e.data) return;
+    if (e.data.ff === "plan") { const bad = takePlan(e.data, "calculator"); if (bad) log("Bot: " + bad); return; }   // today's plan, for the Bot tab
+    if (e.data.ff !== "ack") return;
     const was = link.state;
     link.origin = e.origin && e.origin !== "null" ? e.origin : "*"; link.state = "linked"; link.ackAt = Date.now();
     if (was !== "linked") { log("Linked to the FF calculator."); if (ready) send(); }
@@ -366,7 +374,7 @@
   };
 
   /* 6. The panel (built once; only its words change, so a button never moves under a click). Drag it by its title bar; it
-     remembers where it was. Alt+F hides or shows it. Tabs: Live (the link), Today, Stores, Stock, Checks. It only reads. */
+     remembers where it was. Alt+F hides or shows it. Tabs: Live (the link), Today, Stores, Stock, Checks, Auto, Bot. */
   host = document.createElement("div"); host.id = "ff-live";
   host.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:2147483647";
   const POS = "ff-panel-pos";
@@ -392,10 +400,13 @@
       ul{margin:4px 0;padding-left:18px}li{margin:3px 0}.k{color:#55655D;font-size:11px}
       .stopbar:empty{display:none}.stopbar{margin-top:8px}button.stop{width:100%;background:#B2261E;border-color:#B2261E;color:#fff;font-weight:700}
       input[type=number]{font:inherit;padding:2px 4px;border:1px solid #999;border-radius:4px}label{cursor:pointer}
+      button.big{width:100%;margin:4px 0;padding:9px;font-size:15px;font-weight:700}button.go{background:#2A7546;border-color:#2A7546;color:#fff}
+      textarea{width:100%;min-height:64px;margin-top:4px;font:12px/1.3 ui-monospace,monospace;border:1px solid #999;border-radius:4px;padding:4px}summary{cursor:pointer;margin-top:10px}
+      td.st{white-space:nowrap;font-weight:600}td.done{color:#15803d}td.failed{color:#B2261E}td.skipped{color:#5a6660;font-weight:400}
       .pill{display:inline-flex;gap:6px;align-items:center;background:#FAFBF8;color:#18231E;border:2px solid #B4451C;border-radius:999px;padding:6px 12px;cursor:pointer;font-weight:600}
       @media (pointer:coarse){button.a{min-height:42px;padding:8px 14px}.x{min-width:40px;min-height:40px}.pill{min-height:42px}}
 </style>`;
-  const TABS = [["live", "Live"], ["today", "Today"], ["stores", "Stores"], ["stock", "Stock"], ["checks", "Checks"], ["auto", "Auto"]];
+  const TABS = [["live", "Live"], ["today", "Today"], ["stores", "Stores"], ["stock", "Stock"], ["checks", "Checks"], ["auto", "Auto"], ["bot", "Bot"]];
 
   /* Auto-click (allowed by the Rexar XIV organizers): you pick the game's own buttons, it presses them in order, then waits and
      repeats. Off every time the panel starts; Stop, Esc or × ends it. It only presses buttons and links: it never types into a
