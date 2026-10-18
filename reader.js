@@ -342,12 +342,21 @@
     if (!ready) { ready = true; lastSig = ""; paint(); log(`Live: the box at the bottom right follows the game${link.state === "linked" ? " and sends each change to the calculator at once" : ". Click Copy data there to paste it in the calculator"}.`); }
   };
 
-  /* 5. Hand the data over: straight to the calculator when this tab was opened from it, else by Copy data */
-  const link = {state: window.opener ? "looking" : "none", origin: "*", ackAt: 0, helloAt: 0, sentAt: 0};
-  const toCalc = m => { try { if (window.opener && !window.opener.closed) { window.opener.postMessage(m, link.origin); return true; } } catch (e) {} return false; };
+  /* 5. Hand the data over: straight to the calculator when this tab was opened from it (or the bot opened it), else by Copy data */
+  const link = {state: window.opener ? "looking" : "none", origin: "*", ackAt: 0, helloAt: 0, sentAt: 0, win: null};
+  const SELF = [...document.scripts].map(s => s.src).filter(s => /\/reader\.js(\?|$)/.test(s)).pop() || "";
+  const CALC = SELF ? new URL("calc/", SELF).href : "";   // the calculator next to this reader, for the bot to open
+  const calcWin = () => link.win && !link.win.closed ? link.win : window.opener && !window.opener.closed ? window.opener : null;
+  const toCalc = m => { try { const w = calcWin(); if (w) { w.postMessage(m, link.origin); return true; } } catch (e) {} return false; };
   const hello = () => { link.helloAt = Date.now(); link.origin = "*"; toCalc({ff: "hello", v: V, mode: TAG}); };
+  const openCalc = () => {   // from a click (Start): the calculator in its own tab, linked to this one
+    if (!CALC || calcWin() === link.win && link.win) return false;
+    let w = null; try { w = window.open(CALC, "ff-calc-" + (TAG || "game")); } catch (e) {}
+    if (!w) return false;
+    link.win = w; link.state = "looking"; link.helloAt = Date.now(); log("Opened the FF calculator: unlock it there if it asks, and it links to this tab."); return true;
+  };
   const onMsg = e => {
-    if (!window.opener || e.source !== window.opener || !e.data) return;
+    if (!calcWin() || e.source !== calcWin() || !e.data) return;
     if (e.data.ff === "plan") { const bad = takePlan(e.data, "calculator"); if (bad) log("Bot: " + bad); return; }   // today's plan, for the Bot tab
     if (e.data.ff !== "ack") return;
     const was = link.state;
@@ -533,7 +542,8 @@
     ["buy_raw", "Raw materials"], ["buy_store", "Store stock"], ["marketing", "Marketing"], ["price", "Prices"]];
   const secName = k => (SECTIONS.find(x => x[0] === k) || [k, k])[1];
   const BOT = {on: false, busy: false, prepping: false, cut: false, loop: null, say: "", note: "", warn: "", plans: {}, run: null, days: {},
-    pages: {}, forms: {}, expect: [], fails: 0, prepDay: 0, startAt: 0};
+    pages: {}, forms: {}, expect: [], fails: 0, prepDay: 0, startAt: 0, dry: false, checking: false, check: [], checkAt: 0};
+  const dayKey = d => BOT.dry ? "p" + d : d;   // a practice day is kept apart: the real run that day still does every step
   const today = () => (D && D.day) || 0, live = day => BOT.on && !stopped && today() === day;
   const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k), reEsc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const tx = el => (el && el.textContent || "").replace(/\s+/g, " ").trim();
@@ -590,7 +600,7 @@
       fields.push([k, el.value]); types[k] = t;
       if (t !== "hidden") labels[k] = tx(el.closest("tr,li,p,label") || el.parentElement).slice(0, 120);
     }
-    const b = fe.querySelector("#dbutton") || els.find(e => e.id === "dbutton");
+    const b = fe.querySelector("#dbutton,#submit_button") || els.find(e => e.id === "dbutton" || e.id === "submit_button");   // the game's Submit (both ids are in use)
     return {action: abs(fe.getAttribute("action") || location.href), fields, opts, labels, types, ok: !!b, btn: b && b.type === "submit" && b.name ? [b.name, b.value] : null,
       has: k => fields.some(x => x[0] === k), val: k => (fields.find(x => x[0] === k) || [])[1]};
   };
@@ -610,13 +620,18 @@
   const plain = h => { const d = dom(h); d.querySelectorAll("script,style,noscript,select").forEach(e => e.remove()); return tx(d.body); };
   const errIn = (h, before) => {
     const t = plain(h), b = before ? plain(before) : "";
-    for (const m of t.matchAll(ERR)) { const bit = t.slice(Math.max(0, m.index - 30), m.index + m[0].length + 30).trim(); if (!b.includes(bit)) return bit; }
+    for (const m of t.matchAll(ERR)) {   // the sentence it's in (up to 160 letters), so the game's own words show in full
+      const from = Math.max(0, m.index - 80), to = Math.min(t.length, m.index + m[0].length + 80), pre = t.slice(from, m.index), post = t.slice(m.index);
+      const s0 = from + Math.max(pre.lastIndexOf(". "), pre.lastIndexOf("! "), pre.lastIndexOf("? ")) + 1, e0 = post.search(/[.!?](\s|$)/), end = e0 < 0 ? to : Math.min(to, m.index + e0 + 1);
+      const bit = t.slice(s0 > from ? s0 : from, end).trim(); if (!b.includes(bit)) return bit;
+    }
     return "";
   };
   const verdict = (h, before) => /similar transaction/i.test(plain(h)) ? {skip: "the game takes one similar deal a day"} : (b => b ? {err: `the game said “${b}”`} : null)(errIn(h, before));
   const fill = (f, set) => { const q = new URLSearchParams(); for (const [k, v] of f.fields) q.append(k, own(set, k) ? set[k] : v); if (f.btn) q.append(f.btn[0], f.btn[1]); return q.toString(); };
   const submit = async (f, set, before) => {
     for (const k in set) if (!f.has(k)) return {err: `the form has no ${k} box`};
+    if (BOT.dry) return {ok: true, note: "practice, not sent"};
     const send = async (g, s) => { try { return await post(g.action, fill(g, s)); } catch (e) { return {err: `no clear answer from the game (${e.message}): check whether it went through`, unsure: true}; } };
     const h = await send(f, set); if (typeof h !== "string") return h;
     const v = verdict(h, before); if (v) return v;
@@ -690,6 +705,7 @@
       if (!o) { mark(s, "skipped", "the offer isn't on the list any more"); continue; }
       if (o.state !== "open") { mark(s, "skipped", o.state === "gone" ? "taken by others" : "already in"); continue; }
       const cost = +s.cost || 0, why = refuse(run, "b2b", cost); if (why) { mark(s, "skipped", why); continue; }
+      if (BOT.dry) { settle(run, s, s.action === "bid" || s.action === "accept" ? {ok: true, note: "practice, the offer screen isn't opened"} : {skip: `unknown action “${s.action}”`}, cost, `would ${s.action}`); continue; }   // opening a deal's link may already take it
       const r = s.action === "bid" ? await bidOn(run, s, o, card) : s.action === "accept" ? await acceptOn(card, h) : {skip: `unknown action “${s.action}”`};
       if (!settle(run, s, r, cost, "sent (unverified screen)") && r.err) return;   // an error stops the section
     }
@@ -698,11 +714,10 @@
   /* shop / warehouse space: the location's Rental Manage form, rent<ac> = the total area (up to whole 50 / 500 m² steps), terms<ac> */
   const SPACE = {rent_shop: {menu: "MENU2_retail_location", unit: 50, what: "shop"}, rent_wh: {menu: "MENU2_whs_location", unit: 500, what: "warehouse"}};
   const rentRun = part => async (run, list) => {
-    const K = SPACE[part];
+    const K = SPACE[part], rows = locs(await pageAt(K.menu)); checkExpect();   // the page once: each change is kept on its row
     for (const s of list) {
       if (!live(run.day)) return;
       clock(run, s);
-      const rows = locs(await pageAt(K.menu)); checkExpect();
       const r = locOf(rows, s.target);
       if (!r) { mark(s, "failed", `no location “${s.target}” on the ${K.what} space page`); oops(); return; }
       const want = Math.ceil(+s.qty/K.unit)*K.unit;
@@ -720,7 +735,7 @@
       const set = {[rk]: String(want)}; if (f.has(tk)) set[tk] = term;
       const res = await submit(f, set, F.html);
       delete BOT.forms[r.link]; delete BOT.pages[K.menu];   // its numbers changed (or it failed): read again next time
-      if (settle(run, s, res, cost, `${n(r.area)} → ${n(want)} m²: check the area tomorrow`)) BOT.expect.push({day: run.day, menu: K.menu, name: r.name || s.target, area: want});
+      if (settle(run, s, res, cost, `${n(r.area)} → ${n(want)} m²${BOT.dry ? "" : ": check the area tomorrow"}`) && !BOT.dry) { BOT.expect.push({day: run.day, menu: K.menu, name: r.name || s.target, area: want}); r.area = want; }
       else if (res.err) return;
     }
   };
@@ -818,7 +833,7 @@
         if (res.err) { delete BOT.forms[g.v.url]; partly(res.err); for (const l of lines) if (l.s.state === "running") { l.s.unsure = !!res.unsure; mark(l.s, "failed", res.err); } oops(); return; }
         spend(run, part, o.cost); for (const [l, q] of o.lines) l.got += q;
       }
-      for (const l of lines) if (l.s.state === "running") mark(l.s, "done", `${n(l.got)} in ${l.ts.length} order${l.ts.length > 1 ? "s" : ""} (${l.ts.map(t => n(t.q)).join(" + ")}; the biggest order the game offers today: ${n(l.max)})${l.got !== +l.s.qty ? `, plan ${n(+l.s.qty)}` : ""}${l.extra ? "; " + l.extra : ""}`);
+      for (const l of lines) if (l.s.state === "running") mark(l.s, "done", `${BOT.dry ? "practice, not sent: " : ""}${n(l.got)} in ${l.ts.length} order${l.ts.length > 1 ? "s" : ""} (${l.ts.map(t => n(t.q)).join(" + ")}; the biggest order the game offers today: ${n(l.max)})${l.got !== +l.s.qty ? `, plan ${n(+l.s.qty)}` : ""}${l.extra ? "; " + l.extra : ""}`);
     }
   };
 
@@ -831,7 +846,8 @@
   const mktRun = async (run, list) => {
     const ags = blocks(await pageAt("MENU2_retail_media"), u => /cmd=INVEST_MKT/i.test(u), u => u), by = new Map();
     for (const s of list) {
-      const a = s.agency ? ags.filter(a => [...new URL(a.url).searchParams.values()].some(x => x.toLowerCase() === String(s.agency).toLowerCase()) || norm(a.text).includes(norm(s.agency))) : ags;
+      const k = String(s.agency || "").toLowerCase(), byLink = ags.filter(a => [...new URL(a.url).searchParams.values()].some(x => x.toLowerCase() === k));   // its link's code (MA), else its name as whole words ("MA" is in "marketing")
+      const a = !k ? ags : byLink.length ? byLink : ags.filter(a => new RegExp(`(^|[^a-z0-9])${reEsc(k)}([^a-z0-9]|$)`, "i").test(a.text));
       if (a.length !== 1) { mark(s, "failed", s.agency ? `no single media agency “${s.agency}” on the page` : "the plan doesn't say which media agency"); oops(); return; }
       by.set(a[0], [...(by.get(a[0]) || []), s]);
     }
@@ -852,38 +868,39 @@
       if (!sent.length) continue;
       const res = await submit(f, set, F.html);
       if (res.err || res.skip) { delete BOT.forms[a.url]; sent.forEach(x => { x.s.unsure = !!res.unsure; mark(x.s, "failed", res.err || res.skip); }); oops(); return; }
-      const G = await formAt(a.url, true).catch(() => null), bad = G ? sent.filter(x => toNum(G.f.val(x.k)) !== x.val) : [];   // read the form back
-      for (const x of sent) { spend(run, "marketing", x.cost); if (bad.includes(x)) mark(x.s, "failed", `the form shows ${G.f.val(x.k)} after the change`); else mark(x.s, "done", G ? "the form shows the new amount" : "sent; couldn't read the form back"); }
+      const G = BOT.dry ? null : await formAt(a.url, true).catch(() => null), bad = G ? sent.filter(x => toNum(G.f.val(x.k)) !== x.val) : [];   // read the form back
+      for (const x of sent) { spend(run, "marketing", x.cost); if (bad.includes(x)) mark(x.s, "failed", `the form shows ${G.f.val(x.k)} after the change`); else mark(x.s, "done", BOT.dry ? `practice, not sent: ${n(toNum(f.val(x.k)))} → ${n(x.val)}/day` : G ? "the form shows the new amount" : "sent; couldn't read the form back"); }
       if (bad.length) { run.sec.marketing = "the game shows other amounts"; oops(); return; }
-      run.sec.marketing = "checked on the form";
+      run.sec.marketing = BOT.dry ? "practice" : "checked on the form";
     }
   };
   const notMapped = async (run, list) => list.forEach(s => mark(s, "skipped", "screen not mapped yet"));
   const RUN = {b2b: b2bRun, rent_shop: rentRun("rent_shop"), rent_wh: rentRun("rent_wh"), machine: notMapped, buy_raw: buyRun("buy_raw"), buy_store: buyRun("buy_store"), marketing: mktRun, price: notMapped};
 
-  /* after the orders of a section: the dashboard cash must go down by about what they cost, else the bot stops */
+  /* after the orders of a section: does the dashboard cash show them? A short look only, and a note either way: with cash on
+     delivery the game may take the money when the goods arrive, so an unmoved cash line doesn't stop the bot */
   const verify = async (run, part, before) => {
     const paid = run.paid[part] || 0; if (!(paid > 0)) return;
     let moved = 0;
-    for (const end = Date.now() + 5000; ;) {
+    for (const end = Date.now() + 1500; ;) {
       const X = dash(); if (X.cash != null && before.cash != null) moved = (before.cash - X.cash) + ((X.odUsed || 0) - (before.od || 0));
       if (moved >= 0.5*paid || Date.now() > end || stopped) break;
       await sleep(250);
     }
     if (moved >= 0.5*paid) { run.sec[part] = `cash went down ${n(Math.round(moved))} (orders ${n(Math.round(paid))})`; return; }
-    run.sec[part] = "unconfirmed"; run.notes.push(`${secName(part)}: orders for ${n(Math.round(paid))} sent, but the dashboard cash didn't go down${before.cash == null ? " (is the dashboard on screen?)" : ""}.`);
-    botStop(`Stopped: ${secName(part).toLowerCase()} unconfirmed, the dashboard cash didn't go down. Check the game, then press Start.`, true);
+    run.sec[part] = "the game took the orders; cash not down yet";
+    run.notes.push(`${secName(part)}: orders for ${n(Math.round(paid))} went through, the dashboard cash hasn't moved yet${before.cash == null ? " (is the dashboard on screen?)" : " (paid on delivery?)"}.`);
   };
 
   /* one day: the sections in order; a restarted day skips the steps already done (or that may have gone through) */
   const botDay = async (day, plan) => {
-    const rec = BOT.days[day] = BOT.days[day] || {ids: new Set(), at: 0, complete: false}, X = dash();
+    const rec = BOT.days[dayKey(day)] = BOT.days[dayKey(day)] || {ids: new Set(), at: 0, complete: false}, X = dash();
     const run = BOT.run = {day, plan, t0: Math.max(seenDay === day ? dayAt : 0, BOT.startAt), steps: plan.steps.map(s => ({...s, state: "", why: ""})),
       used: {}, paid: {}, sec: {}, spent: 0, notes: [], cash0: X.cash ?? D.cash, took: null};
     rec.at = Date.now(); rec.complete = false;
     for (const s of run.steps) if (rec.ids.has(s.id)) Object.assign(s, {state: "skipped", why: "done earlier today"});
     for (const s of run.steps) if (!s.state && !RUN[s.section]) Object.assign(s, {state: "skipped", why: "not a section the bot knows"});
-    log(`Bot: day ${day}, ${run.steps.length} steps from ${plan.from === "pasted" ? "a pasted plan" : "the calculator"}.`);
+    log(`Bot: ${BOT.dry ? "practice, " : ""}day ${day}, ${run.steps.length} steps from ${plan.from === "pasted" ? "a pasted plan" : "the calculator"}.`);
     for (const [part, name] of SECTIONS) {
       const list = run.steps.filter(s => s.section === part && !s.state);
       if (!list.length) continue;
@@ -896,7 +913,7 @@
       for (const s of list) if (!s.state || s.state === "running") mark(s, "skipped", why);
       for (const s of list) if (s.state === "done" || s.unsure) rec.ids.add(s.id);
       if (list.some(s => s.state === "done")) { if (SPACE[part]) run.sec[part] = "check the areas tomorrow"; if (part === "b2b") run.sec[part] = "unverified screen"; }
-      if (BUY[part]) await verify(run, part, before);
+      if (BUY[part] && !BOT.dry) await verify(run, part, before);
     }
     for (const s of run.steps) if (!s.state) Object.assign(s, {state: "skipped", why: today() !== day ? "the day ended first" : "the bot was stopped"});
     run.took = Date.now() - run.t0; rec.complete = live(day) || today() !== day;
@@ -923,7 +940,7 @@
   const botLoop = async () => {
     let readyDay = 0, readyAt = 0, prep = null;
     while (BOT.on && !stopped) {
-      const day = today(), rec = BOT.days[day], p = BOT.plans[day];
+      const day = today(), rec = BOT.days[dayKey(day)], p = BOT.plans[day];
       if (!ready || !day) { botSay("Waiting for the first read of the game…"); await sleep(250); continue; }
       if (rec && rec.complete && !(p && p.from === "pasted" && p.got > rec.at)) { await sleep(250); continue; }   // done today (a newer pasted plan runs again)
       if (BOT.prepDay !== day && !prep) { BOT.cut = false; prep = botPrep(day).finally(() => { prep = null; }); }
@@ -931,7 +948,7 @@
       if (readyDay !== day) { readyDay = day; readyAt = Date.now(); }
       const since = lap.day === day ? lap.sales || lap.read || 0 : 0, waited = Date.now() - readyAt;   // a plan made from this day's sales; else after 8 s the day's newest
       if (!p || (p.from !== "pasted" && p.got < since && waited < 8000)) {
-        if (!BOT.prepping || waited >= 8000) botSay(`Waiting for the calculator plan for day ${day}${link.state === "linked" || waited < 8000 ? "" : " (not linked: open the game with Go live in the calculator, or paste a plan)"}.`);
+        if (!BOT.prepping || waited >= 8000) botSay(`Waiting for the calculator plan for day ${day}${link.state === "linked" || waited < 8000 ? "" : " (not linked: unlock the calculator tab, or open the game with Go live there, or paste a plan)"}.`);
         await sleep(150); continue;
       }
       BOT.cut = true; if (prep) await prep;
@@ -944,8 +961,42 @@
   const spin = () => { BOT.loop = botLoop().catch(e => botStop("Problem: " + e.message)).finally(() => { BOT.loop = null; if (BOT.on && !stopped) spin(); }); };
   const botStart = () => {
     if (BOT.on || stopped) return;
-    Object.assign(BOT, {on: true, fails: 0, cut: false, prepDay: 0, startAt: Date.now(), note: "", say: "Starting…"}); log("Bot on."); paint();
+    Object.assign(BOT, {on: true, fails: 0, cut: false, prepDay: 0, startAt: Date.now(), note: "", say: "Starting…"}); log(BOT.dry ? "Bot on, practice: nothing is sent." : "Bot on."); paint();
+    if (link.state !== "linked" && openCalc()) BOT.note = "Opened the calculator in a new tab: unlock it there if it asks. Its plan comes back here.";
     if (!BOT.loop) spin();   // one loop at a time: a quick Stop and Start keeps the one still running
+  };
+  /* Check the screens: every screen the bot uses, read now and checked for the boxes it fills in. It sends nothing */
+  const botCheck = async () => {
+    if (BOT.on || BOT.checking) return;
+    BOT.checking = true; BOT.check = []; paint();
+    const row = (name, ok, detail) => { BOT.check.push({name, ok, detail}); paint(); };
+    const tryRow = async (name, job) => { try { row(name, true, await job()); } catch (e) { row(name, false, e.message); } };
+    try {
+      await tryRow("Day and cash", async () => { const X = dash(); if (!X.day) throw new Error("can't read the day: show the dashboard"); if (X.cash == null) throw new Error("can't read Cash in Bank: show the dashboard"); return `day ${X.day}/${X.maxDay || "?"}, cash ${n(X.cash)}`; });
+      for (const part of ["rent_shop", "rent_wh"]) await tryRow(secName(part), async () => {
+        const K = SPACE[part], rows = locs(await pageAt(K.menu, true)).filter(r => r.name);
+        if (!rows.length) throw new Error("no locations with a rent link on the page");
+        const r = rows.find(r => r.area > 0) || rows[0], F = await formAt(r.link, true), tk = "terms" + r.ac;
+        if (!F.f.has("rent" + r.ac)) throw new Error(`the ${r.name} form has no rent${r.ac} box`);
+        return `${rows.length} locations, ${r.name} form ready${F.f.opts[tk] ? ` (terms ${F.f.opts[tk].map(o => o.v).join(" / ")} days)` : ""}`;
+      });
+      for (const part of ["buy_raw", "buy_store"]) await tryRow(secName(part), async () => {
+        const vs = await vendorsOf(part); if (!vs.length) throw new Error("no order link on the vendor page");
+        const f = (await formAt(vs[0].url, true)).f, dest = BUY[part].dest, ps = Object.keys(f.opts).filter(k => /^P\d+$/i.test(k)), sizes = ps.length ? tiersOf(f, ps[0]).map(t => t.q) : [];
+        if (!f.opts[dest]) throw new Error(`the order form has no ${dest} list`);
+        if (!sizes.length) throw new Error("no products with order sizes on the order form");
+        return `${vs.length} vendor${vs.length > 1 ? "s" : ""}, ${ps.length} products, ${f.opts[dest].filter(o => o.v !== "").length} destinations, sizes ${n(Math.min(...sizes))} to ${n(Math.max(...sizes))}`;
+      });
+      await tryRow("Marketing", async () => {
+        const ags = blocks(await pageAt("MENU2_retail_media", true), u => /cmd=INVEST_MKT/i.test(u), u => u); if (!ags.length) throw new Error("no Set Marketing Expense link");
+        const boxes = (await formAt(ags[0].url, true)).f.fields.map(x => x[0]).filter(k => /^invest\d+$/i.test(k));
+        if (!boxes.length) throw new Error("no store boxes on the marketing form");
+        return `${ags.length} media agenc${ags.length > 1 ? "ies" : "y"}, ${boxes.length} store boxes`;
+      });
+      await tryRow("B2B deals", async () => { const c = offerCards(dom(await page("MENU2_B2Bincm"))).length; return `${c} offer${c === 1 ? "" : "s"} on the list (the bid and accept screens are still unseen)`; });
+      row("Machines, prices", false, "not mapped yet: the bot skips these steps");
+      row("Calculator", link.state === "linked", link.state === "linked" ? "linked" : CALC ? "not linked yet: Start opens it" : "not linked: open the game with Go live in the calculator");
+    } finally { BOT.checking = false; BOT.checkAt = Date.now(); paint(); }
   };
   const botStop = (why, force) => { if (!BOT.on && !force) return; BOT.on = false; BOT.cut = true; BOT.say = why || "Stopped."; log("Bot: " + BOT.say); paint(); };
   const loadPaste = () => {
@@ -957,8 +1008,9 @@
   const paneBot = () => {
     const d = today(), last = Object.values(BOT.plans).sort((a, b) => b.day - a.day || b.got - a.got)[0];
     const r = BOT.run && BOT.run.day === d ? BOT.run : null, p = r ? r.plan : BOT.plans[d] || last || null, steps = r ? r.steps : p ? p.steps : [];
-    const top = `<p class="m">${esc(BOT.say || "Off. Press Start: each day it carries out the calculator's plan.")}</p>${BOT.note ? `<p class="w">${esc(BOT.note)}</p>` : ""}${BOT.warn ? `<p class="w">${esc(BOT.warn)}</p>` : ""}`;
-    if (!p) return top + `<p class="m">No plan yet. ${link.state === "linked" ? "The calculator sends one after each update." : "Open the game with Go live in the calculator, or paste a plan below."}</p>`;
+    const top = `<p class="m">${esc(BOT.say || "Off. Press Start: each day it carries out the calculator's plan.")}</p>${BOT.note ? `<p class="w">${esc(BOT.note)}</p>` : ""}${BOT.warn ? `<p class="w">${esc(BOT.warn)}</p>` : ""}`
+      + (BOT.check.length ? `<p style="margin-top:6px"><b>Screen check</b>${BOT.checkAt && !BOT.checking ? ` <span class="k">${esc(new Date(BOT.checkAt).toLocaleTimeString())}</span>` : ""}</p><table>${BOT.check.map(c => `<tr><td>${esc(c.name)}<div class="k">${esc(c.detail)}</div></td><td class="st ${c.ok ? "done" : "failed"}">${c.ok ? "ready" : "no"}</td></tr>`).join("")}</table>` : "");
+    if (!p) return top + `<p class="m">No plan yet. ${link.state === "linked" ? "The calculator sends one after each update." : CALC ? "Start opens the calculator and links it to this tab (or paste a plan below)." : "Open the game with Go live in the calculator, or paste a plan below."}</p>`;
     const time = !r ? "" : r.took != null ? `Day ${r.day} took ${sec(r.took)}${r.took > 30000 ? " (over the 30 s target)" : ""}.` : `Day ${r.day}: ${sec(Date.now() - r.t0)} so far.`;
     const box = (name, k, ss) => { const cap = k ? capOf({plan: p, steps}, k) : null;
       return `<p style="margin-top:8px"><b>${esc(name)}</b>${k ? ` <span class="k">${n(Math.round((r && r.used[k]) || 0))} of ${cap == null ? "no budget" : n(Math.round(cap))} EUR</span>` : ""}${r && r.sec[k] ? ` <span class="k">· ${esc(r.sec[k])}</span>` : ""}</p>
@@ -1023,7 +1075,8 @@
       <div class="pane" data-t="live"><p data-f="link"></p><p class="m" data-f="speed"></p><p class="m" data-f="info"></p><p class="w" data-f="stale"></p></div>
       <div class="stopbar" data-f="stopbar"></div>
       <div class="pane" data-t="today" data-f="today"></div><div class="pane" data-t="auto" data-f="auto"></div><div class="pane" data-t="stores" data-f="stores"></div><div class="pane" data-t="stock" data-f="stock"></div><div class="pane" data-t="checks" data-f="checks"></div>
-      <div class="pane" data-t="bot"><button class="a big go" data-bot="go" data-f="botgo"></button><div role="status" data-f="bot"></div>
+      <div class="pane" data-t="bot"><button class="a big go" data-bot="go" data-f="botgo"></button>
+      <div class="r"><button class="a" data-bot="check" data-f="botcheck">Check the screens</button><label class="k"><input type="checkbox" data-bot="dry" data-f="botdry"> Practice: do everything but send</label></div><div role="status" data-f="bot"></div>
       <details><summary class="k">Paste a plan (for testing)</summary><textarea data-bot="paste" spellcheck="false" placeholder="{&quot;ff&quot;:&quot;plan&quot;,&quot;v&quot;:1,&quot;day&quot;:1,&quot;reserve&quot;:0,&quot;budgets&quot;:{},&quot;steps&quot;:[]}"></textarea><div class="r"><button class="a" data-bot="load">Load</button></div></details></div>
       <p class="m" role="status" data-f="msg"></p>
       <div class="r"><button class="a p" data-a="copy">Copy data</button><button class="a" data-a="read">Read now</button><button class="a" data-a="setup">Update setup</button></div></div>`);
@@ -1045,13 +1098,16 @@
     if (tab === "checks") put('[data-f="checks"]', paneChecks());
     if (tab === "auto" && !root.activeElement?.matches?.('input[type="number"],select')) put('[data-f="auto"]', paneAuto());
     if (tab === "bot") put('[data-f="bot"]', paneBot());
-    const bg = root.querySelector('[data-f="botgo"]'); put('[data-f="botgo"]', BOT.on ? "■ Stop the bot" : "▶ Start the bot"); bg.classList.toggle("go", !BOT.on); bg.classList.toggle("stop", BOT.on);
-    put('[data-f="stopbar"]', (AC.on ? `<button class="a stop" data-ac="stop">■ Stop auto-click</button>` : "") + (BOT.on ? `<button class="a stop" data-bot="stop">■ Stop the bot</button>` : ""));
+    const bg = root.querySelector('[data-f="botgo"]'); put('[data-f="botgo"]', BOT.on ? "■ Stop the bot" : BOT.dry ? "▶ Start a practice run" : "▶ Start the bot"); bg.classList.toggle("go", !BOT.on); bg.classList.toggle("stop", BOT.on);
+    const bd = root.querySelector('[data-f="botdry"]'); bd.checked = BOT.dry; bd.disabled = BOT.on;
+    const bc = root.querySelector('[data-f="botcheck"]'); bc.disabled = BOT.on || BOT.checking; put('[data-f="botcheck"]', BOT.checking ? "Checking…" : "Check the screens");
+    put('[data-f="stopbar"]', (AC.on ? `<button class="a stop" data-ac="stop">■ Stop auto-click</button>` : "") + (BOT.on && tab !== "bot" ? `<button class="a stop" data-bot="stop">■ Stop the bot</button>` : ""));   // on the Bot tab its own button stops it
     put('[data-f="msg"]', esc(note && Date.now() - noteAt < 6000 ? note : msg));
     root.querySelector('[data-a="copy"]').disabled = !ready;
     for (const k of ["read", "setup"]) root.querySelector(`[data-a="${k}"]`).disabled = busy === "setup";
   }
   root.addEventListener("change", e => {
+    if (e.target.dataset && e.target.dataset.bot === "dry") { if (!BOT.on) BOT.dry = !!e.target.checked; paint(); return; }
     const bk = e.target.dataset && e.target.dataset.b2b;
     if (bk === "mode") { B2B.mode = e.target.value === "all" ? "all" : "smart"; b2bSave(); if (B2B.at) b2bCheck().catch(() => {}); paint(); return; }
     if (bk === "margin") { B2B.margin = Math.min(3, Math.max(1, +e.target.value || 1.15)); b2bSave(); paint(); return; }
@@ -1063,7 +1119,7 @@
   });
   root.addEventListener("click", async e => {
     const bb = e.target.closest("button[data-bot]");
-    if (bb) { const k = bb.dataset.bot; if (k === "go") { if (BOT.on) botStop("Stopped."); else botStart(); } if (k === "stop") botStop("Stopped."); if (k === "load") loadPaste(); paint(); return; }
+    if (bb) { const k = bb.dataset.bot; if (k === "go") { if (BOT.on) botStop("Stopped."); else botStart(); } if (k === "stop") botStop("Stopped."); if (k === "load") loadPaste(); if (k === "check") botCheck().catch(e => log("Bot check: " + e.message)); paint(); return; }
     const c = e.target.closest("[data-ac]");
     if (c && c.tagName !== "INPUT") {
       const k = c.dataset.ac;
@@ -1161,7 +1217,7 @@
     const now = Date.now(), m = (($id("KPI_DAY____") || {}).textContent || "").match(/(\d+)\s*\/\s*(\d+)/), d = m ? +m[1] : 0;
     if ((d && d !== kpiDay) || now - lookAt >= 1000) { kpiDay = d || kpiDay; look(now); }
     if (sendDue && now - lastSent >= 300) send();
-    if (link.state !== "none" && (!window.opener || window.opener.closed)) { link.state = "none"; paint(); }   // the calculator's page was closed
+    if (link.state !== "none" && !calcWin()) { link.state = "none"; paint(); }   // the calculator's page was closed
     if (link.state === "looking" && now - link.helloAt > 5000) hello();
     if (link.state === "linked" && link.ackAt < link.sentAt && now - link.sentAt > 8000) { link.state = "looking"; hello(); paint(); }   // the calculator stopped answering
     if (link.state === "linked" && ready && now - lastSent > 15000) send();   // a beat: the calculator knows this tab is still here, even when the game is paused
