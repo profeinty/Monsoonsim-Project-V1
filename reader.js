@@ -4,7 +4,7 @@
      the game setup, so it starts in seconds. */
   if (window.__ff && window.__ff.stop) window.__ff.stop();
   document.getElementById("ff-reader-box")?.remove();
-  const V = 4, BUILD = "v5", GAP = 900, CLICK = 1500;   // the game blocks fast clicks: page reads at least GAP ms apart, clicks in Configuration CLICK ms
+  const V = 4, BUILD = "v6", GAP = 900, CLICK = 1500;   // the game blocks fast clicks: page reads at least GAP ms apart, clicks in Configuration CLICK ms
   const MODE = String(window.__FF_MODE || ""), TAG = MODE;   // the calculator mode the bookmark was made for (Mode 12i or Mode 14), set by loader.js
   const log = m => console.log("%c[FF] " + m, "color:#B4451C;font-weight:bold");
   const toNum = s => s == null ? null : +String(s).replace(/[^\d.]/g, "");
@@ -58,6 +58,7 @@
     const dm = (($id("KPI_DAY____") || {}).innerText || "").match(/(\d+)\s*\/\s*(\d+)/) || body.match(/(\d+)\s*\/\s*(\d+)/);
     if (dm) { X.day = +dm[1]; X.maxDay = +dm[2]; }
     const pick = re => { const m = body.match(re); return m ? toNum(m[1]) : null; };
+    X.costs = Object.fromEntries([...body.matchAll(/(?:^|\n)\s*Cost - ([^\n]+?)\s*\n?\s*(\d[\d.,]*)\s*(?=\n|$)/g)].map(m => [m[1].replace(/\.{2,}$|…$/, "").trim(), toNum(m[2])]));
     X.cash = pick(/(?:^|\n)\s*Cash in Bank\s*\n?\s*([\d,]+)/); X.odUsed = pick(/(?:^|\n)\s*Overdraft Used\s*\n?\s*([\d,]+)/);
     X.delinq = pick(/(?:^|\n)\s*Delinquent Payouts\s*\n?\s*([\d,]+)/);
     X.stores = [...body.matchAll(/(?:^|\n)([^\n@]+)\n((?:[^\n@]+?\s*@\s*[\d.]+\s*\n\s*[\d,]+\s*\n)+)\s*Space utilization\s*\n?\s*\((\d+)%\)\s*([\d,]+)\s*\/\s*([\d,]+)/g)]
@@ -306,6 +307,7 @@
     await quiet(readMachines);
     D.menus = menuList(); dayRead = day; checkNew();
     deliver(); msg = ""; dayLog(day);
+    if (B2B.used) await quiet(b2bCheck, "B2B offers");
     paint();
   };
   const dayLog = day => {   // in the Console: how fast each day went out
@@ -446,6 +448,61 @@
       for (let t = 0; AC.on && t < AC.every * 10; t++) await sleep(100);
     }
   };
+  /* B2B deals (B2B > B2B Offers). Two kinds: fixed price ("Each: 14 EUR", first team to accept gets it) and bids ("Max bid price
+     allowed"). Smart mode grabs a deal only when the warehouses hold enough of the product and the price is at least cost × margin;
+     a bid goes in 3% under the max price, never below that. The game takes one similar deal a day, so one per product per day.
+     For now this only previews: the pressing and bidding are wired up once the open-deal screen and the bid form are known. */
+  const B2B = {used: false, mode: "smart", margin: 1.15, at: 0, offers: [], err: "", taken: {}};
+  try { const q = JSON.parse(localStorage.getItem(KEY + ":b2b")) || {}; if (q.mode) B2B.mode = q.mode; if (+q.margin) B2B.margin = +q.margin; } catch (e) {}
+  const b2bSave = () => { try { localStorage.setItem(KEY + ":b2b", JSON.stringify({mode: B2B.mode, margin: B2B.margin})); } catch (e) {} };
+  const isLabel = e => e.children.length < 3 && /^\s*OFFER\s*$/.test(e.textContent);
+  const offerCards = doc => [...doc.querySelectorAll("body *")].filter(isLabel).map(l => {
+    let c = l; while (c.parentElement && c.parentElement !== doc.body && [...c.parentElement.querySelectorAll("*")].filter(isLabel).length === 1) c = c.parentElement;
+    return c;
+  });
+  const parseOffer = c => {
+    const t = c.textContent.replace(/\s+/g, " "), g = (re, f = x => x) => { const m = t.match(re); return m ? f(m[1]) : null; };
+    const pm = t.match(/Product\s*:\s*(.+?)\s+([\d,]+)\s*Unit/i);
+    const bid = [...c.querySelectorAll("a,button,input[type=button],input[type=submit]")].find(b => /^\s*bid\s*$/i.test(b.textContent || b.value));
+    const o = {id: g(/OFFER\s*(\d+)/), client: g(/Client\s*:\s*(.+?)\s+Product/), product: pm && pm[1].trim(), qty: pm && toNum(pm[2]),
+      each: g(/Each\s*:\s*([\d.]+)/, Number), maxBid: g(/Max bid price allowed\s*:\s*([\d.]+)/, Number), due: g(/Expected Delivery Day\s*:\s*(\d+)/, Number),
+      penalty: g(/Late penalty\s*:\s*([\d,]+)/, toNum), asked: g(/Requested\s*(\d+)/, Number)};
+    o.kind = o.maxBid != null ? "bid" : "fixed";
+    o.state = /We participated/i.test(t) ? "done" : /Taken by others/i.test(t) ? "gone" : /\b(won|lost|accepted|awarded|expired|closed)\b/i.test(t) ? "done" : o.kind === "bid" && !bid ? "done" : "open";
+    return o;
+  };
+  const costOf = (costs, name) => { for (const k in costs) if (name && (name === k || name.startsWith(k))) return costs[k]; return null; };
+  const stockOf = name => (D && D.warehouses || []).reduce((t, w) => t + (w.items || []).filter(it => it.name === name).reduce((a, it) => a + (it.qty || 0), 0), 0);
+  const judge = (o, costs, used) => {
+    const price = o.kind === "bid" ? Math.floor(o.maxBid * 97) / 100 : o.each, cost = costOf(costs, o.product), have = stockOf(o.product) - (used[o.product] || 0);
+    const v = {price, cost, have, go: false, why: ""};
+    if (o.state !== "open") { v.why = o.state === "gone" ? "taken by others" : "already in"; return v; }
+    if (B2B.taken[o.product] === (D && D.day)) { v.why = "already one for this product today"; return v; }
+    if (B2B.mode === "all") { v.go = true; v.why = "grab all"; return v; }
+    if (cost == null) { v.why = "no cost per unit on the dashboard"; return v; }
+    if (price < cost * B2B.margin) { v.why = `${price} is under cost ${cost} × ${B2B.margin}`; return v; }
+    if (have < o.qty) { v.why = `only ${have.toLocaleString()} in the warehouses`; return v; }
+    v.go = true; v.why = `+${Math.round((price - cost) * o.qty).toLocaleString()} profit`; return v;
+  };
+  const b2bCheck = async () => {
+    B2B.used = true; B2B.err = ""; paint();
+    const h = await page("MENU2_B2Bincm"), costs = dash().costs || {}, used = {};
+    B2B.offers = offerCards(dom(h)).map(parseOffer).filter(o => o.id).map(o => {
+      const v = judge(o, costs, used); if (v.go) used[o.product] = (used[o.product] || 0) + o.qty; return {...o, v};
+    });
+    const seen = {}; for (const o of B2B.offers) if (o.v.go) { if (seen[o.product]) { o.v.go = false; o.v.why = "one per product per day"; } seen[o.product] = 1; }
+    B2B.at = Date.now(); paint();
+  };
+  const paneB2B = () => {
+    const open = B2B.offers.filter(o => o.state === "open");
+    return `<p style="margin-top:12px"><b>B2B deals</b> <span class="k">preview: shows what it would grab</span></p>
+      <p class="r"><label>Mode <select data-b2b="mode"><option value="smart" ${B2B.mode === "smart" ? "selected" : ""}>Smart: in stock and profitable</option><option value="all" ${B2B.mode === "all" ? "selected" : ""}>Grab all</option></select></label>
+      <label>Margin × <input type="number" min="1" max="3" step="0.01" value="${B2B.margin}" data-b2b="margin" style="width:4.5em"></label>
+      <button class="a" data-ac="b2b">${B2B.at ? "Check again" : "Check offers"}</button></p>
+      ${B2B.err ? `<p class="w">${esc(B2B.err)}</p>` : ""}
+      ${!B2B.at ? "" : !open.length ? '<p class="m">No open deals right now.</p>' : `<table><tr><th>Deal</th><th class="n">Price</th><th></th></tr>${open.map(o => `<tr><td>${esc(o.product)} ${n(o.qty)}<div class="k">${o.kind === "bid" ? "bid, max " + o.maxBid : "fixed"} · due day ${n(o.due)}</div></td><td class="n">${n(o.v.price)}</td><td>${o.v.go ? '<span class="ok">Grab</span>' : "Skip"}<div class="k">${esc(o.v.why)}</div></td></tr>`).join("")}</table>`}
+      ${B2B.at ? `<p class="k">Checked ${esc(new Date(B2B.at).toLocaleTimeString())}, then again each new day.</p>` : ""}`;
+  };
   const paneAuto = () => `<p><label><input type="checkbox" data-ac="on" ${AC.on ? "checked" : ""} ${AC.picks.length ? "" : "disabled"}> <b>Auto-click ${AC.on ? '<span class="ok">ON</span>' : "off"}</b></label></p>
       <p class="k">Presses the buttons below in order, waits, then repeats. Esc or Stop ends it. It never types into fields.</p>
       ${AC.picks.length ? `<table><tr><th>#</th><th>Button</th><th></th></tr>${AC.picks.map((pk, i) => `<tr><td>${i + 1}</td><td>${esc(pk.label || pk.sel)}</td><td class="n"><button class="x" data-ac="del" data-i="${i}" title="Remove" ${AC.on ? "disabled" : ""}>×</button></td></tr>`).join("")}</table>` : '<p class="m">No buttons yet. Press <b>Pick a button</b>, then click the game button you want pressed.</p>'}
@@ -453,7 +510,7 @@
       <p class="r"><label>Wait <input type="number" min="2" max="600" step="1" value="${AC.every}" data-ac="every" style="width:4.5em"> s between rounds</label>
       <label>Stop after <input type="number" min="0" max="9999" step="1" value="${AC.rounds}" data-ac="rounds" style="width:4.5em"> rounds (0 = never)</label></p>
       <p class="m">${AC.on ? `Round ${AC.done + 1}. ` : ""}${esc(AC.last)}</p>
-      <p class="k">If a button opens a new page, the panel closes and auto-click stops: run the bookmark again.</p>`;
+      <p class="k">If a button opens a new page, the panel closes and auto-click stops: run the bookmark again.</p>${paneB2B()}`;
   const n = v => v == null || isNaN(v) ? "–" : Number(v).toLocaleString();
   const none = '<p class="m">Nothing read yet. Wait for the first read, or press Read now.</p>';
   const paneToday = () => !D ? none : `<table>
@@ -526,13 +583,16 @@
     if (tab === "stores") put('[data-f="stores"]', paneStores());
     if (tab === "stock") put('[data-f="stock"]', paneStock());
     if (tab === "checks") put('[data-f="checks"]', paneChecks());
-    if (tab === "auto" && !root.activeElement?.matches?.('input[type="number"]')) put('[data-f="auto"]', paneAuto());
+    if (tab === "auto" && !root.activeElement?.matches?.('input[type="number"],select')) put('[data-f="auto"]', paneAuto());
     put('[data-f="stopbar"]', AC.on ? `<button class="a stop" data-ac="stop">■ Stop auto-click</button>` : "");
     put('[data-f="msg"]', esc(note && Date.now() - noteAt < 6000 ? note : msg));
     root.querySelector('[data-a="copy"]').disabled = !ready;
     for (const k of ["read", "setup"]) root.querySelector(`[data-a="${k}"]`).disabled = busy === "setup";
   }
   root.addEventListener("change", e => {
+    const bk = e.target.dataset && e.target.dataset.b2b;
+    if (bk === "mode") { B2B.mode = e.target.value === "all" ? "all" : "smart"; b2bSave(); if (B2B.at) b2bCheck().catch(() => {}); paint(); return; }
+    if (bk === "margin") { B2B.margin = Math.min(3, Math.max(1, +e.target.value || 1.15)); b2bSave(); paint(); return; }
     const k = e.target.dataset && e.target.dataset.ac; if (!k) return;
     if (k === "on") { if (e.target.checked) acRun(); else acStop(); }
     if (k === "every") { AC.every = Math.min(600, Math.max(2, Math.round(+e.target.value || 5))); acSave(); }
@@ -547,6 +607,7 @@
       if (k === "pick") { AC.picking = !AC.picking; AC.last = AC.picking ? "Click the game button to add. Esc cancels." : ""; if (!AC.picking) unglow(); }
       if (k === "del") { AC.picks.splice(+c.dataset.i, 1); acSave(); }
       if (k === "clear") { AC.picks = []; acSave(); AC.last = ""; }
+      if (k === "b2b") { b2bCheck().catch(err => { B2B.err = "Couldn't read the offers: " + err.message; paint(); }); return; }
       paint(); return;
     }
     const a = e.target.closest("[data-a],[data-tab]"); if (!a) return;
