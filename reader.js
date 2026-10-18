@@ -522,6 +522,452 @@
       <label>Stop after <input type="number" min="0" max="9999" step="1" value="${AC.rounds}" data-ac="rounds" style="width:4.5em"> rounds (0 = never)</label></p>
       <p class="m">${AC.on ? `Round ${AC.done + 1}. ` : ""}${esc(AC.last)}</p>
       <p class="k">If a button opens a new page, the panel closes and auto-click stops: run the bookmark again.</p>${paneB2B()}`;
+  /* The bot (Bot tab): carries out the calculator's plan for the day ({ff: "plan"} from the calculator that opened this tab, or
+     pasted), one section after the other: B2B deals, shop space, warehouse space, machines, raw materials, store stock,
+     marketing, prices. Off every time the panel starts; Stop, Esc or × ends it. Each section stays within its budget and cash
+     never goes under the plan's reserve. Every answer from the game is read: error words stop that section, 2 failures in a
+     row (or orders the dashboard cash doesn't show) stop the bot. It never opens a Cancel link, and skips screens not mapped yet.
+     Order sizes are the game's own choices, read from its order form each day (they follow the demand), and a store never gets
+     more than its market's forecast demand can buy before the game ends. */
+  const SECTIONS = [["b2b", "B2B deals"], ["rent_shop", "Shop space"], ["rent_wh", "Warehouse space"], ["machine", "Machines"],
+    ["buy_raw", "Raw materials"], ["buy_store", "Store stock"], ["marketing", "Marketing"], ["price", "Prices"]];
+  const secName = k => (SECTIONS.find(x => x[0] === k) || [k, k])[1];
+  const BOT = {on: false, busy: false, prepping: false, cut: false, loop: null, say: "", note: "", warn: "", plans: {}, run: null, days: {},
+    pages: {}, forms: {}, expect: [], fails: 0, prepDay: 0, startAt: 0};
+  const today = () => (D && D.day) || 0, live = day => BOT.on && !stopped && today() === day;
+  const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k), reEsc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const tx = el => (el && el.textContent || "").replace(/\s+/g, " ").trim();
+  const nm = s => norm(s).replace(/(retail|warehouse|whs|store|shop)$/, ""), same = (a, b) => !!nm(a) && nm(a) === nm(b);
+  const pick1 = (list, name, f) => {   // the one item called `name` (exact, else the only one that starts the same), or null
+    const b = nm(name); if (!b) return null;
+    const ex = list.filter(x => nm(f(x)) === b); if (ex.length) return ex.length === 1 ? ex[0] : null;
+    const pre = list.filter(x => { const a = nm(f(x)); return a && (a.startsWith(b) || b.startsWith(a)); });
+    return pre.length === 1 ? pre[0] : null;
+  };
+  const termOf = s => s.term ?? s.terms ?? null;
+  const stepText = s => { const q = s.qty != null ? n(+s.qty) : "", t = termOf(s), m2 = () => `${s.target}: ${q} m²${t ? `, ${t}-day` : ""}`, buy = () => `${s.target}: ${s.product || "?"} ${q}`;
+    return ({b2b: () => `${s.action === "bid" ? "Bid on" : "Accept"} offer ${s.target}${q ? " · " + q : ""}${s.price != null ? " at " + s.price : ""}`, rent_shop: m2, rent_wh: m2,
+      machine: () => `${s.target} × ${q}`, buy_raw: buy, buy_store: buy, marketing: () => `${s.target}: ${n(+s.price)}/day${s.agency ? " · " + s.agency : ""}`,
+      price: () => `${s.target}: ${s.price}`}[s.section] || (() => `${s.action || ""} ${s.target || ""} ${q}`.trim()))(); };
+
+  /* the plan: the newest one for each day. "" when it was taken, else why not */
+  const takePlan = (p, from) => {
+    if (!p || typeof p !== "object" || !Array.isArray(p.steps) || !(+p.day > 0)) return "That isn't a plan: it needs a day and a list of steps.";
+    if (p.v != null && +p.v !== 1) return `Plan version ${p.v} isn't known to this reader.`;
+    if (p.mode && TAG && String(p.mode) !== TAG) return `That plan is for Mode ${p.mode}, this game is Mode ${TAG}.`;
+    const seen = {}, steps = p.steps.filter(s => s && typeof s === "object").map(s => {   // an id per step, so a restarted day skips what's done
+      const b = String(s.id ?? [s.section, s.action, s.target, s.product, s.agency].join("|")), k = seen[b] = (seen[b] || 0) + 1;
+      return {...s, id: k > 1 ? b + "#" + k : b};
+    });
+    const day = +p.day; BOT.plans[day] = {...p, day, steps, got: Date.now(), from};
+    for (const d of Object.keys(BOT.plans)) if (+d < day - 2) delete BOT.plans[d];
+    paint(); return "";
+  };
+
+  /* the game's screens: action links, location rows, forms. Read once a day (or again after a failed order) and kept */
+  const urlOf = el => { const h = hrefOf(el); if (h) return h; const m = ((el.getAttribute("href") || "") + " " + (el.getAttribute("onclick") || "")).match(/['"]([^'"]*ms_sure_learner\?[^'"]*)['"]/); return m ? m[1] : null; };
+  const abs = u => new URL(u, location.href).href, arg = (u, k) => new URL(u, location.href).searchParams.get(k);
+  const linksIn = (el, test) => [...el.querySelectorAll("a,button,input,[onclick]")].map(e => ({el: e, url: urlOf(e)})).filter(x => x.url && test(x.url)).map(x => ({el: x.el, url: abs(x.url)}));
+  const blocks = (h, test, key) => {   // each action link with its part of the page (the biggest box around it with no other one in it)
+    const doc = dom(h), out = [], keys = el => new Set(linksIn(el, test).map(x => key(x.url)));
+    for (const {el, url} of linksIn(doc, test)) {
+      let c = el; while (c.parentElement && c.parentElement !== doc.body && keys(c.parentElement).size <= 1) c = c.parentElement;
+      const b = out.find(b => b.key === key(url)); if (b) b.urls.push(url); else out.push({key: key(url), url, urls: [url], text: tx(c)});
+    }
+    return out;
+  };
+  const locs = h => blocks(h, u => /cmd=SPACE_MANAGE/i.test(u), u => arg(u, "ac")).map(b => ({...b, ac: b.key,
+    name: ((b.text.match(/Location\s*:\s*(.+?)\s*(?:\$\(|Specification|Retail Rental|Warehouse Rental|Rental\b|Current Area|Seniors|Population|$)/i) || [])[1] || "").trim(),
+    rate: toNum((b.text.match(/Rental\s*:\s*([\d.]+)/i) || [])[1]), area: toNum((b.text.match(/Current Area\s*:?\s*([\d,]+)/i) || [])[1]) || 0,
+    link: b.urls.find(u => /[?&](edit=1|id=)/i.test(u)) || b.url}));   // an existing rental: its edit link
+  const locOf = (rows, name) => pick1(rows.filter(r => r.name), name, r => r.name) || (x => x.length === 1 ? x[0] : null)(rows.filter(r => nm(name) && norm(r.text).includes(nm(name))));
+  const formData = fe => {   // a form as the game filled it in: each field's value, each list's choices, the words beside each box
+    const fields = [], opts = {}, labels = {}, types = {}, els = [...fe.elements];
+    for (const el of els) {
+      const k = el.name, t = (el.type || "").toLowerCase();
+      if (!k || el.disabled || !/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) || /^(submit|button|image|reset|file)$/.test(t) || (/^(checkbox|radio)$/.test(t) && !el.checked)) continue;
+      if (el.tagName === "SELECT") opts[k] = [...el.options].map(o => ({v: o.value, t: tx(o)}));
+      fields.push([k, el.value]); types[k] = t;
+      if (t !== "hidden") labels[k] = tx(el.closest("tr,li,p,label") || el.parentElement).slice(0, 120);
+    }
+    const b = fe.querySelector("#dbutton") || els.find(e => e.id === "dbutton");
+    return {action: abs(fe.getAttribute("action") || location.href), fields, opts, labels, types, ok: !!b, btn: b && b.type === "submit" && b.name ? [b.name, b.value] : null,
+      has: k => fields.some(x => x[0] === k), val: k => (fields.find(x => x[0] === k) || [])[1]};
+  };
+  const formOf = h => { const fs = [...dom(h).forms].map(formData); return fs.find(f => f.ok) || (fs.length === 1 ? fs[0] : null); };
+  const cmdOf = f => arg(f.action, "cmd") || f.val("cmd") || "";
+  const sameForm = (a, b) => a.action === b.action && a.fields.map(x => x[0]).sort().join() === b.fields.map(x => x[0]).sort().join();
+  const pageAt = async (id, fresh) => { const c = BOT.pages[id]; if (c && !fresh && c.day >= today()) return c.html; const html = await page(id); BOT.pages[id] = {day: today(), html}; return html; };
+  const formAt = async (url, fresh) => {
+    const c = BOT.forms[url]; if (c && !fresh && c.day >= today()) return c;
+    const html = await get(url), f = formOf(html); if (!f) throw new Error("no form on that screen");
+    return (BOT.forms[url] = {day: today(), html, f});
+  };
+
+  /* sending a form: the game's own values, only the step's fields changed. An answer with error words is a failure (words
+     already on the form page, its help text, don't count); a confirm screen for the same action gets one answer */
+  const ERR = /not enough|insufficient|cannot|can't|unable|error|failed|exceed|invalid|not allowed|already have/gi;
+  const plain = h => { const d = dom(h); d.querySelectorAll("script,style,noscript,select").forEach(e => e.remove()); return tx(d.body); };
+  const errIn = (h, before) => {
+    const t = plain(h), b = before ? plain(before) : "";
+    for (const m of t.matchAll(ERR)) { const bit = t.slice(Math.max(0, m.index - 30), m.index + m[0].length + 30).trim(); if (!b.includes(bit)) return bit; }
+    return "";
+  };
+  const verdict = (h, before) => /similar transaction/i.test(plain(h)) ? {skip: "the game takes one similar deal a day"} : (b => b ? {err: `the game said “${b}”`} : null)(errIn(h, before));
+  const fill = (f, set) => { const q = new URLSearchParams(); for (const [k, v] of f.fields) q.append(k, own(set, k) ? set[k] : v); if (f.btn) q.append(f.btn[0], f.btn[1]); return q.toString(); };
+  const submit = async (f, set, before) => {
+    for (const k in set) if (!f.has(k)) return {err: `the form has no ${k} box`};
+    const send = async (g, s) => { try { return await post(g.action, fill(g, s)); } catch (e) { return {err: `no clear answer from the game (${e.message}): check whether it went through`, unsure: true}; } };
+    const h = await send(f, set); if (typeof h !== "string") return h;
+    const v = verdict(h, before); if (v) return v;
+    const c = formOf(h);
+    if (!c || !c.ok || sameForm(c, f) || cmdOf(c) !== cmdOf(f)) return {ok: true};   // no confirm step: the form again, or another screen
+    const h2 = await send(c, {}); if (typeof h2 !== "string") return h2;
+    const v2 = verdict(h2, h); if (v2) return {...v2, unsure: true};
+    const c2 = formOf(h2);
+    return c2 && c2.ok && !sameForm(c2, f) && cmdOf(c2) === cmdOf(f) ? {err: "the game asked to confirm again", unsure: true} : {ok: true};
+  };
+
+  /* money: a section's running total stays within its budget, and cash (the dashboard's, or less by what was ordered) above the reserve */
+  const capOf = (run, part) => { const b = (run.plan.budgets || {})[part]; if (b != null && b !== "" && isFinite(+b)) return +b; const s = run.steps.find(s => s.section === part && s.budget != null && s.budget !== "" && isFinite(+s.budget)); return s ? +s.budget : null; };
+  const cashNow = run => { const c = dash().cash ?? D.cash; return c == null || run.cash0 == null ? null : Math.min(c, run.cash0 - run.spent); };
+  const refuse = (run, part, cost, pend = 0) => {   // why a step can't spend `cost` (pend: what the section has lined up already), or ""
+    if (!(cost > 0)) return "";
+    const cap = capOf(run, part), used = (run.used[part] || 0) + pend, keep = +run.plan.reserve, c = cashNow(run);
+    if (cap == null) return "the plan has no budget for this section";
+    if (used + cost > cap + 0.5) return `over the budget: ${n(Math.round(used))} used, ${n(Math.round(cost))} more > ${n(Math.round(cap))}`;
+    if (run.plan.reserve == null || run.plan.reserve === "" || !isFinite(keep)) return "the plan has no cash reserve";
+    if (c == null) return "can't read the cash on the dashboard";
+    if (c - pend - cost < keep) return `cash would go under the reserve: ${n(Math.round(c - pend))} − ${n(Math.round(cost))} < ${n(Math.round(keep))}`;
+    return "";
+  };
+  const mark = (s, state, why = "") => { s.state = state; s.why = why; log(`Bot · ${secName(s.section)} · ${stepText(s)}: ${state}${why ? " (" + why + ")" : ""}`); paint(); };
+  const oops = () => { if (++BOT.fails >= 2) botStop("Stopped after 2 failures in a row. Check the game, then press Start."); };
+  const spend = (run, part, cost) => { BOT.fails = 0; run.used[part] = (run.used[part] || 0) + cost; run.spent += cost; run.paid[part] = (run.paid[part] || 0) + cost; };
+  const clock = (run, s) => {   // a step that starts after 30 s still runs, in order, with a warning
+    if (!s.late && Date.now() - run.t0 > 30000) { s.late = true; const m = `Past 30 s: ${secName(s.section)} · ${stepText(s)} still runs.`; run.notes.push(m); log("Bot warning: " + m); }
+    s.state = "running"; paint();
+  };
+  const settle = (run, s, r, cost, ok) => {   // a step's answer: true when it went through
+    if (r.skip) { mark(s, "skipped", r.skip); return false; }
+    if (r.err) { s.unsure = !!r.unsure; mark(s, "failed", r.err); oops(); return false; }
+    spend(run, s.section, cost); mark(s, "done", r.note ? `${ok}: ${r.note}` : ok); return true;
+  };
+
+  /* B2B: the offer card by its number. Accept = its accept control's form; bid = the Bid form with the plan's price (never under
+     the floor or over the max) and the offer's quantity. Neither screen has been seen in a running game yet */
+  const ctl = (card, re) => [...card.querySelectorAll("a,button,input[type=button],input[type=submit]")].find(b => re.test(((b.textContent || "") + " " + (b.getAttribute("value") || "")).trim()));
+  const acceptOn = async (card, list) => {
+    const c = ctl(card, /accept|take|confirm/i); if (!c) return {err: "no Accept button on the offer card"};
+    const fe = c.closest("form");
+    if (fe) { const f = formData(fe); if (c.type === "submit" && c.name) f.btn = [c.name, c.value]; return submit(f, {}, list); }
+    const u = urlOf(c); if (!u) return {err: "the Accept button has no link the bot can follow"};
+    const h = await get(abs(u)), f = formOf(h);
+    if (/similar transaction/i.test(plain(h))) return {skip: "the game takes one similar deal a day"};
+    if (!f) { const b = errIn(h, list); return b ? {err: `the game said “${b}”`} : {ok: true, note: "no form came up after Accept"}; }
+    return submit(f, {}, h);
+  };
+  const bidOn = async (run, s, o, card) => {
+    const c = ctl(card, /^bid$/i), u = c && urlOf(c); if (!u) return {err: "no Bid link on the offer card"};
+    const h = await get(abs(u)), f = formOf(h);
+    if (/similar transaction/i.test(plain(h))) return {skip: "the game takes one similar deal a day"};
+    if (!f) { const b = errIn(h, ""); return {err: b ? `the game said “${b}”` : "no bid form came up"}; }
+    const boxes = Object.keys(f.types).filter(k => /^(text|number|tel)$/.test(f.types[k])), one = x => x.length === 1 ? x[0] : null;
+    const pk = boxes.find(k => /price|bid/i.test(k)) || one(boxes.filter(k => /price|bid/i.test(f.labels[k] || ""))) || one(boxes);
+    if (!pk) return {err: "couldn't tell which box takes the bid price"};
+    const floor = +(s.floor ?? (run.plan.floors || {})[o.product] ?? s.price), price = Math.round(Math.min(+s.price, o.maxBid ?? Infinity)*100)/100;
+    if (!(price > 0) || price < floor) return {skip: `the bid would be ${price}, under the floor ${floor}`};
+    const set = {[pk]: String(price)}, qk = boxes.find(k => k !== pk && /qty|quant|unit/i.test(k + " " + (f.labels[k] || "")));
+    if (qk) set[qk] = String(o.qty ?? s.qty);
+    return submit(f, set, h);
+  };
+  const b2bRun = async (run, list) => {
+    const h = await page("MENU2_B2Bincm"), cards = offerCards(dom(h));   // read fresh: the deals go fast
+    for (const s of list) {
+      if (!live(run.day)) return;
+      clock(run, s);
+      const card = cards.find(c => parseOffer(c).id === String(s.target).replace(/\D/g, "")), o = card && parseOffer(card);
+      if (!o) { mark(s, "skipped", "the offer isn't on the list any more"); continue; }
+      if (o.state !== "open") { mark(s, "skipped", o.state === "gone" ? "taken by others" : "already in"); continue; }
+      const cost = +s.cost || 0, why = refuse(run, "b2b", cost); if (why) { mark(s, "skipped", why); continue; }
+      const r = s.action === "bid" ? await bidOn(run, s, o, card) : s.action === "accept" ? await acceptOn(card, h) : {skip: `unknown action “${s.action}”`};
+      if (!settle(run, s, r, cost, "sent (unverified screen)") && r.err) return;   // an error stops the section
+    }
+  };
+
+  /* shop / warehouse space: the location's Rental Manage form, rent<ac> = the total area (up to whole 50 / 500 m² steps), terms<ac> */
+  const SPACE = {rent_shop: {menu: "MENU2_retail_location", unit: 50, what: "shop"}, rent_wh: {menu: "MENU2_whs_location", unit: 500, what: "warehouse"}};
+  const rentRun = part => async (run, list) => {
+    const K = SPACE[part];
+    for (const s of list) {
+      if (!live(run.day)) return;
+      clock(run, s);
+      const rows = locs(await pageAt(K.menu)); checkExpect();
+      const r = locOf(rows, s.target);
+      if (!r) { mark(s, "failed", `no location “${s.target}” on the ${K.what} space page`); oops(); return; }
+      const want = Math.ceil(+s.qty/K.unit)*K.unit;
+      if (!(want > 0)) { mark(s, "skipped", "the plan asks for 0 m²: giving up a location is left to you"); continue; }
+      if (want === r.area) { mark(s, "skipped", `already ${n(want)} m²`); continue; }
+      const known = s.cost != null && s.cost !== "" && isFinite(+s.cost);
+      if (!known && !r.rate && want > r.area) { mark(s, "skipped", "no rent rate on the page to work out the cost"); continue; }
+      const F = await formAt(r.link), f = F.f, rk = "rent" + r.ac, tk = "terms" + r.ac;
+      if (!f.has(rk)) { delete BOT.forms[r.link]; mark(s, "failed", `the rent form has no ${rk} box`); oops(); return; }
+      const term = String(termOf(s) ?? f.val(tk) ?? ""), opt = (f.opts[tk] || []).find(o => o.v === term);
+      if (f.has(tk) && !opt) { mark(s, "failed", `no ${term}-day choice on the rent form`); oops(); return; }
+      const off = opt ? +((opt.t.match(/(\d+(?:\.\d+)?)\s*%/) || [])[1] || 0)/100 : 0;
+      const cost = known ? +s.cost : r.rate*Math.max(0, want - r.area)*(+term || 1)*(1 - off), why = refuse(run, part, cost);
+      if (why) { mark(s, "skipped", why); continue; }
+      const set = {[rk]: String(want)}; if (f.has(tk)) set[tk] = term;
+      const res = await submit(f, set, F.html);
+      delete BOT.forms[r.link]; delete BOT.pages[K.menu];   // its numbers changed (or it failed): read again next time
+      if (settle(run, s, res, cost, `${n(r.area)} → ${n(want)} m²: check the area tomorrow`)) BOT.expect.push({day: run.day, menu: K.menu, name: r.name || s.target, area: want});
+      else if (res.err) return;
+    }
+  };
+  const checkExpect = () => {   // earlier space changes, as today's location pages show them
+    BOT.expect = BOT.expect.filter(e => {
+      const c = BOT.pages[e.menu]; if (e.day >= today() || !c || c.day < today()) return true;
+      const r = locOf(locs(c.html), e.name);
+      if (r && r.area !== e.area) { BOT.warn = `${e.name}: asked for ${n(e.area)} m² on day ${e.day}, the game shows ${n(r.area)} m².`; log("Bot warning: " + BOT.warn); }
+      else if (r) log(`Bot: ${e.name} has ${n(r.area)} m², as asked on day ${e.day}.`);
+      return false;
+    });
+  };
+
+  /* stock: one order = one size per product (the form's own choices), so a quantity takes several orders; products for the same
+     store and vendor share orders. The fewest orders for the most units up to the plan; up to 5% over only when that's closer */
+  const BUY = {buy_store: {menu: "MENU2_retail_vendor", dest: "destination_rtl", test: u => /cmd=BUY_FG/i.test(u) && /loctype=RTL/i.test(u)},
+    buy_raw: {menu: "MENU2_warehouse_vendor", dest: "destination_whs", test: u => /cmd=BUY_RM/i.test(u)}};
+  const vendorsOf = async part => blocks(await pageAt(BUY[part].menu), BUY[part].test, u => arg(u, "vc") || u);
+  const priceIn = (t, name) => { const m = String(t).match(new RegExp(reEsc(name) + "\\s*[:@-]?\\s*(?:EUR|€)?\\s*(\\d+(?:\\.\\d+)?)", "i")); return m ? +m[1] : null; };
+  const unitOf = (v, product) => priceIn(v.text, product) ?? costOf(dash().costs || {}, product) ?? costOf(D.costs || {}, product);
+  const vendorFor = (vs, s) => {   // the plan's vendor, else the only one, else the cheapest for the product
+    if (s.vendor) { const k = String(s.vendor).toLowerCase(), x = vs.filter(v => String(v.key).toLowerCase() === k || norm(v.text).includes(norm(s.vendor))); return x.length === 1 ? x[0] : null; }
+    const priced = vs.map(v => ({v, p: priceIn(v.text, s.product)})).filter(x => x.p != null).sort((a, b) => a.p - b.p);
+    return vs.length === 1 ? vs[0] : priced.length ? priced[0].v : vs[0];
+  };
+  const fieldFor = (f, product, v) => {   // P1, P2…: the list whose empty choice is the product's name, else the vendor page's order
+    const ps = Object.keys(f.opts).filter(k => /^P\d+$/i.test(k)).sort((a, b) => a.slice(1) - b.slice(1));
+    const hit = pick1(ps, product, k => (f.opts[k].find(o => o.v === "") || {}).t || ""); if (hit) return hit;
+    const known = [...new Set((D.products || []).flatMap(p => [p.name, ...(p.bom || []).map(b => b.name)]))];
+    const names = known.map(x => ({x, i: v.text.indexOf(x)})).filter(y => y.i >= 0).sort((a, b) => a.i - b.i).map(y => y.x), i = names.findIndex(x => same(x, product));
+    return names.length === ps.length && i >= 0 ? ps[i] : null;
+  };
+  const tiersOf = (f, k) => (f.opts[k] || []).map(o => ({v: o.v, q: toNum(o.v)})).filter(t => t.q > 0);
+  const split = (q, tiers, over) => {   // order sizes adding up to the most units <= q in the fewest orders (over: or up to 5% above, when closer)
+    const t = [...tiers].sort((a, b) => b.q - a.q); q = Math.floor(q); if (!t.length || !(q > 0)) return [];
+    const g = t.reduce((a, x) => { let b = x.q; while (b) [a, b] = [b, a % b]; return a; }, 0), below = Math.floor(q/g), top = Math.floor((over ? q*1.05 : q)/g);
+    if (top > 50000) { const out = []; let r = q; for (const x of t) while (r >= x.q) { out.push(x); r -= x.q; } return out; }   // too fine to count through: largest first
+    const cnt = new Array(top + 1).fill(Infinity), via = new Array(top + 1); cnt[0] = 0;
+    for (let i = 1; i <= top; i++) for (const x of t) { const k = x.q/g; if (k <= i && cnt[i - k] + 1 < cnt[i]) { cnt[i] = cnt[i - k] + 1; via[i] = x; } }
+    let i = below; while (i > 0 && cnt[i] === Infinity) i--;
+    let j = below + 1; while (j <= top && cnt[j] === Infinity) j++;
+    if (j <= top && (j*g - q < q - i*g || (j*g - q === q - i*g && cnt[j] < cnt[i]))) i = j;
+    const out = []; for (; i > 0; i -= via[i].q/g) out.push(via[i]);
+    return out.sort((a, b) => b.q - a.q);
+  };
+  const fcCap = s => {   // the most the store's whole market can buy before the game ends (or the goods expire): its forecast, peak days included
+    const city = (D.cities || []).find(c => same(c.name, s.target)), fc = city && (D.forecast || {})[`${city.name}-${s.product}`];
+    if (!(fc > 0) || !D.maxDay || !D.day) return null;
+    const exp = +((D.products || []).find(p => same(p.name, s.product)) || {}).expire || 0, to = exp ? Math.min(D.maxDay, D.day + exp) : D.maxDay;
+    const days = Math.max(0, to - D.day + 1), peaks = (D.holidays || []).filter(d => d >= D.day && d <= to).length;
+    const st = (D.stores || []).find(x => same(x.name, s.target)), have = st ? ((st.items || []).find(i => same(i.name, s.product)) || {}).qty || 0 : 0;
+    return {cap: Math.max(0, Math.floor(fc*(days + peaks*Math.max(0, (D.spike || 1) - 1)) - have)), fc, to};
+  };
+  const buyRun = part => async (run, list) => {
+    const K = BUY[part], vs = await vendorsOf(part), groups = [];
+    if (!vs.length) { list.forEach(s => mark(s, "failed", "no order link on the vendor page")); oops(); return; }
+    for (const s of list) {
+      const v = vendorFor(vs, s); if (!v) { mark(s, "failed", `no single vendor “${s.vendor}” on the page`); oops(); return; }
+      const g = groups.find(g => g.v === v && nm(g.target) === nm(s.target)); if (g) g.steps.push(s); else groups.push({v, target: s.target, steps: [s]});
+    }
+    for (const g of groups) {
+      if (!live(run.day)) return;
+      const F = await formAt(g.v.url), f = F.f, dest = pick1((f.opts[K.dest] || []).filter(o => o.v !== ""), g.target, o => o.t);
+      if (!dest) { g.steps.forEach(s => mark(s, "failed", `no “${g.target}” among the order form's destinations`)); oops(); return; }
+      const ps = Object.keys(f.opts).filter(k => /^P\d+$/i.test(k)), stuck = ps.find(k => !f.opts[k].some(o => o.v === ""));
+      if (stuck) { g.steps.forEach(s => mark(s, "failed", `the order form has no "none" choice for ${stuck}`)); oops(); return; }
+      const lines = []; let pend = 0;
+      for (const s of g.steps) {
+        clock(run, s);
+        const k = fieldFor(f, s.product, g.v), tiers = k ? tiersOf(f, k) : [];
+        if (!tiers.length) { mark(s, "failed", k ? `no order sizes for ${s.product} on the form` : `no ${s.product} on the order form`); oops(); return; }
+        let qty = Math.floor(+s.qty) || 0, extra = "";
+        const fc = part === "buy_store" ? fcCap(s) : null;
+        if (fc && qty > fc.cap) { qty = fc.cap; extra = `cut to ${n(qty)}: its forecast (${n(fc.fc)}/day) can't sell more by day ${fc.to}`; }
+        const unit = unitOf(g.v, s.product);
+        if (unit == null && !(+s.cost > 0)) { mark(s, "skipped", `no price for ${s.product}`); continue; }
+        const sum = ts => ts.reduce((a, t) => a + t.q, 0), costFor = ts => Math.max(unit != null ? sum(ts)*unit : 0, +s.cost > 0 && +s.qty > 0 ? +s.cost*sum(ts)/+s.qty : 0);
+        let ts = split(qty, tiers, true), why = refuse(run, part, costFor(ts), pend);
+        if (why && sum(ts) > qty) { ts = split(qty, tiers, false); why = refuse(run, part, costFor(ts), pend); }   // the 5% over doesn't fit: round down
+        if (!ts.length) { mark(s, "skipped", `${n(qty)} is under the smallest order (${n(Math.min(...tiers.map(t => t.q)))})${extra ? "; " + extra : ""}`); continue; }
+        if (why) { mark(s, "skipped", why); continue; }
+        const cost = costFor(ts); pend += cost;
+        lines.push({s, k, ts, cost, total: sum(ts), got: 0, extra, max: Math.max(...tiers.map(t => t.q))});
+      }
+      const orders = [], blank = Object.fromEntries(ps.map(k => [k, ""]));
+      for (const l of lines) l.ts.forEach((t, i) => { const o = orders[i] = orders[i] || {set: {...blank, [K.dest]: dest.v}, cost: 0, lines: []}; o.set[l.k] = t.v; o.cost += l.cost*t.q/l.total; o.lines.push([l, t.q]); });
+      const partly = why => { for (const l of lines) if (l.s.state === "running" && l.got) mark(l.s, "done", `${n(l.got)} of ${n(l.total)} bought, then ${why}`); };
+      for (const o of orders) {
+        if (!live(run.day)) { partly(BOT.on ? "the day ended" : "the bot was stopped"); return; }
+        lines.forEach(l => l.s.state === "running" && clock(run, l.s));
+        const c = cashNow(run), keep = +run.plan.reserve;
+        if (c == null || !isFinite(keep) || c - o.cost < keep) { partly("cash would go under the reserve"); for (const l of lines) if (l.s.state === "running") mark(l.s, "skipped", "cash would go under the reserve"); return; }
+        const res = await submit(f, o.set, F.html);
+        if (res.skip) { partly(res.skip); for (const l of lines) if (l.s.state === "running") mark(l.s, "skipped", res.skip); break; }
+        if (res.err) { delete BOT.forms[g.v.url]; partly(res.err); for (const l of lines) if (l.s.state === "running") { l.s.unsure = !!res.unsure; mark(l.s, "failed", res.err); } oops(); return; }
+        spend(run, part, o.cost); for (const [l, q] of o.lines) l.got += q;
+      }
+      for (const l of lines) if (l.s.state === "running") mark(l.s, "done", `${n(l.got)} in ${l.ts.length} order${l.ts.length > 1 ? "s" : ""} (${l.ts.map(t => n(t.q)).join(" + ")}; the biggest order the game offers today: ${n(l.max)})${l.got !== +l.s.qty ? `, plan ${n(+l.s.qty)}` : ""}${l.extra ? "; " + l.extra : ""}`);
+    }
+  };
+
+  /* marketing: one form per media agency, invest<storeId> = EUR per day for the plan's stores, the other stores as they are */
+  const storeIdOf = (name, f) => {   // from a store order form's destinations, else the words beside the marketing boxes
+    for (const c of Object.values(BOT.forms)) { const o = c.f.opts.destination_rtl, hit = o && pick1(o.filter(x => x.v !== ""), name, x => x.t); if (hit) return hit.v; }
+    const hit = f.fields.map(x => x[0]).filter(k => /^invest\d+$/i.test(k) && nm(name) && norm(f.labels[k] || "").includes(nm(name)));
+    return hit.length === 1 ? hit[0].replace(/^invest/i, "") : null;
+  };
+  const mktRun = async (run, list) => {
+    const ags = blocks(await pageAt("MENU2_retail_media"), u => /cmd=INVEST_MKT/i.test(u), u => u), by = new Map();
+    for (const s of list) {
+      const a = s.agency ? ags.filter(a => [...new URL(a.url).searchParams.values()].some(x => x.toLowerCase() === String(s.agency).toLowerCase()) || norm(a.text).includes(norm(s.agency))) : ags;
+      if (a.length !== 1) { mark(s, "failed", s.agency ? `no single media agency “${s.agency}” on the page` : "the plan doesn't say which media agency"); oops(); return; }
+      by.set(a[0], [...(by.get(a[0]) || []), s]);
+    }
+    for (const [a, ss] of by) {
+      if (!live(run.day)) return;
+      const F = await formAt(a.url), f = F.f, set = {}, sent = []; let pend = 0;
+      for (const s of ss) {
+        clock(run, s);
+        let id = storeIdOf(s.target, f);
+        if (!id && !Object.values(BOT.forms).some(c => c.f.opts.destination_rtl)) { const v = (await vendorsOf("buy_store"))[0]; if (v) { await formAt(v.url); id = storeIdOf(s.target, f); } }
+        const k = id && "invest" + id, val = Math.round(+s.price), cost = s.cost != null && s.cost !== "" && isFinite(+s.cost) ? +s.cost : val;
+        if (!k || !f.has(k)) { mark(s, "failed", `no marketing box for ${s.target} on the form`); oops(); return; }
+        if (!(val >= 0)) { mark(s, "failed", "the plan has no EUR/day for it"); oops(); return; }
+        const why = refuse(run, "marketing", cost, pend); if (why) { mark(s, "skipped", why); continue; }
+        if (toNum(f.val(k)) === val) { spend(run, "marketing", cost); mark(s, "done", `already ${n(val)}/day`); continue; }
+        set[k] = String(val); pend += cost; sent.push({s, k, val, cost});
+      }
+      if (!sent.length) continue;
+      const res = await submit(f, set, F.html);
+      if (res.err || res.skip) { delete BOT.forms[a.url]; sent.forEach(x => { x.s.unsure = !!res.unsure; mark(x.s, "failed", res.err || res.skip); }); oops(); return; }
+      const G = await formAt(a.url, true).catch(() => null), bad = G ? sent.filter(x => toNum(G.f.val(x.k)) !== x.val) : [];   // read the form back
+      for (const x of sent) { spend(run, "marketing", x.cost); if (bad.includes(x)) mark(x.s, "failed", `the form shows ${G.f.val(x.k)} after the change`); else mark(x.s, "done", G ? "the form shows the new amount" : "sent; couldn't read the form back"); }
+      if (bad.length) { run.sec.marketing = "the game shows other amounts"; oops(); return; }
+      run.sec.marketing = "checked on the form";
+    }
+  };
+  const notMapped = async (run, list) => list.forEach(s => mark(s, "skipped", "screen not mapped yet"));
+  const RUN = {b2b: b2bRun, rent_shop: rentRun("rent_shop"), rent_wh: rentRun("rent_wh"), machine: notMapped, buy_raw: buyRun("buy_raw"), buy_store: buyRun("buy_store"), marketing: mktRun, price: notMapped};
+
+  /* after the orders of a section: the dashboard cash must go down by about what they cost, else the bot stops */
+  const verify = async (run, part, before) => {
+    const paid = run.paid[part] || 0; if (!(paid > 0)) return;
+    let moved = 0;
+    for (const end = Date.now() + 5000; ;) {
+      const X = dash(); if (X.cash != null && before.cash != null) moved = (before.cash - X.cash) + ((X.odUsed || 0) - (before.od || 0));
+      if (moved >= 0.5*paid || Date.now() > end || stopped) break;
+      await sleep(250);
+    }
+    if (moved >= 0.5*paid) { run.sec[part] = `cash went down ${n(Math.round(moved))} (orders ${n(Math.round(paid))})`; return; }
+    run.sec[part] = "unconfirmed"; run.notes.push(`${secName(part)}: orders for ${n(Math.round(paid))} sent, but the dashboard cash didn't go down${before.cash == null ? " (is the dashboard on screen?)" : ""}.`);
+    botStop(`Stopped: ${secName(part).toLowerCase()} unconfirmed, the dashboard cash didn't go down. Check the game, then press Start.`, true);
+  };
+
+  /* one day: the sections in order; a restarted day skips the steps already done (or that may have gone through) */
+  const botDay = async (day, plan) => {
+    const rec = BOT.days[day] = BOT.days[day] || {ids: new Set(), at: 0, complete: false}, X = dash();
+    const run = BOT.run = {day, plan, t0: Math.max(seenDay === day ? dayAt : 0, BOT.startAt), steps: plan.steps.map(s => ({...s, state: "", why: ""})),
+      used: {}, paid: {}, sec: {}, spent: 0, notes: [], cash0: X.cash ?? D.cash, took: null};
+    rec.at = Date.now(); rec.complete = false;
+    for (const s of run.steps) if (rec.ids.has(s.id)) Object.assign(s, {state: "skipped", why: "done earlier today"});
+    for (const s of run.steps) if (!s.state && !RUN[s.section]) Object.assign(s, {state: "skipped", why: "not a section the bot knows"});
+    log(`Bot: day ${day}, ${run.steps.length} steps from ${plan.from === "pasted" ? "a pasted plan" : "the calculator"}.`);
+    for (const [part, name] of SECTIONS) {
+      const list = run.steps.filter(s => s.section === part && !s.state);
+      if (!list.length) continue;
+      if (!live(day)) break;
+      BOT.say = `Day ${day}: ${name.toLowerCase()}…`; paint();
+      const Y = dash(), before = {cash: Y.cash, od: Y.odUsed};
+      try { await RUN[part](run, list); }
+      catch (e) { for (const s of list) if (s.state === "running") { s.unsure = true; mark(s, "failed", e.message); } oops(); }
+      const why = !BOT.on || stopped ? "the bot was stopped" : today() !== day ? "the day ended first" : "the section stopped after an error";
+      for (const s of list) if (!s.state || s.state === "running") mark(s, "skipped", why);
+      for (const s of list) if (s.state === "done" || s.unsure) rec.ids.add(s.id);
+      if (list.some(s => s.state === "done")) { if (SPACE[part]) run.sec[part] = "check the areas tomorrow"; if (part === "b2b") run.sec[part] = "unverified screen"; }
+      if (BUY[part]) await verify(run, part, before);
+    }
+    for (const s of run.steps) if (!s.state) Object.assign(s, {state: "skipped", why: today() !== day ? "the day ended first" : "the bot was stopped"});
+    run.took = Date.now() - run.t0; rec.complete = live(day) || today() !== day;
+    const c = run.steps.reduce((a, s) => (a[s.state] = (a[s.state] || 0) + 1, a), {});
+    const sum = `Day ${day} ${rec.complete ? "done" : "stopped"} in ${sec(run.took)}${run.took > 30000 ? " (over the 30 s target)" : ""}: ${c.done || 0} done, ${c.skipped || 0} skipped, ${c.failed || 0} failed.`;
+    log("Bot: " + sum); if (BOT.on) BOT.say = sum + (rec.complete ? ` Waiting for day ${day + 1}…` : ""); paint();
+  };
+
+  /* prep: while the day's data goes out, read the screens the plan will need; the day's run cuts it short (the rest is read when needed) */
+  const botPrep = async day => {
+    BOT.prepping = true;
+    const p = BOT.plans[day] || Object.values(BOT.plans).sort((a, b) => b.day - a.day)[0], parts = new Set(p ? p.steps.map(s => s.section) : SECTIONS.map(x => x[0]));
+    const go = () => BOT.on && !stopped && !BOT.cut && today() === day, jobs = [];
+    for (const part of ["rent_shop", "rent_wh"]) if (parts.has(part)) jobs.push(async () => {
+      const K = SPACE[part], rows = locs(await pageAt(K.menu));
+      if (p && p.day === day) for (const s of p.steps.filter(s => s.section === part)) { const r = locOf(rows, s.target); if (go() && r && Math.ceil(+s.qty/K.unit)*K.unit !== r.area) await formAt(r.link); }
+    });
+    for (const part of ["buy_raw", "buy_store"]) if (parts.has(part)) jobs.push(async () => { for (const v of await vendorsOf(part)) if (go()) await formAt(v.url); });
+    if (parts.has("marketing")) jobs.push(async () => { for (const a of blocks(await pageAt("MENU2_retail_media"), u => /cmd=INVEST_MKT/i.test(u), u => u)) if (go()) await formAt(a.url); });
+    for (const j of jobs) { if (!go()) break; botSay(`Day ${day}: reading the game's order screens…`); await quiet(j, "Bot prep"); }
+    checkExpect(); BOT.prepDay = day; BOT.prepping = false; paint();
+  };
+  const botSay = m => { if (BOT.say !== m) { BOT.say = m; paint(); } };
+  const botLoop = async () => {
+    let readyDay = 0, readyAt = 0, prep = null;
+    while (BOT.on && !stopped) {
+      const day = today(), rec = BOT.days[day], p = BOT.plans[day];
+      if (!ready || !day) { botSay("Waiting for the first read of the game…"); await sleep(250); continue; }
+      if (rec && rec.complete && !(p && p.from === "pasted" && p.got > rec.at)) { await sleep(250); continue; }   // done today (a newer pasted plan runs again)
+      if (BOT.prepDay !== day && !prep) { BOT.cut = false; prep = botPrep(day).finally(() => { prep = null; }); }
+      if (dayRead !== day || (salesWait && salesWait.day === day)) { if (!BOT.prepping) botSay(`Day ${day}: waiting for the day's data…`); await sleep(150); continue; }
+      if (readyDay !== day) { readyDay = day; readyAt = Date.now(); }
+      const since = lap.day === day ? lap.sales || lap.read || 0 : 0, waited = Date.now() - readyAt;   // a plan made from this day's sales; else after 8 s the day's newest
+      if (!p || (p.from !== "pasted" && p.got < since && waited < 8000)) {
+        if (!BOT.prepping || waited >= 8000) botSay(`Waiting for the calculator plan for day ${day}${link.state === "linked" || waited < 8000 ? "" : " (not linked: open the game with Go live in the calculator, or paste a plan)"}.`);
+        await sleep(150); continue;
+      }
+      BOT.cut = true; if (prep) await prep;
+      if (!BOT.on || stopped || today() !== day) continue;
+      BOT.busy = true; paint();
+      try { await botDay(day, p); } catch (e) { botSay("Problem: " + e.message); log("Bot: " + e.message); } finally { BOT.busy = false; }
+      paint();
+    }
+  };
+  const spin = () => { BOT.loop = botLoop().catch(e => botStop("Problem: " + e.message)).finally(() => { BOT.loop = null; if (BOT.on && !stopped) spin(); }); };
+  const botStart = () => {
+    if (BOT.on || stopped) return;
+    Object.assign(BOT, {on: true, fails: 0, cut: false, prepDay: 0, startAt: Date.now(), note: "", say: "Starting…"}); log("Bot on."); paint();
+    if (!BOT.loop) spin();   // one loop at a time: a quick Stop and Start keeps the one still running
+  };
+  const botStop = (why, force) => { if (!BOT.on && !force) return; BOT.on = false; BOT.cut = true; BOT.say = why || "Stopped."; log("Bot: " + BOT.say); paint(); };
+  const loadPaste = () => {
+    const ta = root.querySelector('[data-bot="paste"]'); let p;
+    try { p = JSON.parse(ta.value); } catch (e) { BOT.note = "That isn't valid JSON."; return; }
+    const bad = takePlan(p, "pasted");
+    BOT.note = bad || (+p.day === today() ? `Loaded the plan for day ${p.day}: it runs ${BOT.on ? "now" : "when you press Start"}.` : `Loaded the plan for day ${p.day}. The game is on day ${today() || "?"}, so it waits for its day.`);
+  };
+  const paneBot = () => {
+    const d = today(), last = Object.values(BOT.plans).sort((a, b) => b.day - a.day || b.got - a.got)[0];
+    const r = BOT.run && BOT.run.day === d ? BOT.run : null, p = r ? r.plan : BOT.plans[d] || last || null, steps = r ? r.steps : p ? p.steps : [];
+    const top = `<p class="m">${esc(BOT.say || "Off. Press Start: each day it carries out the calculator's plan.")}</p>${BOT.note ? `<p class="w">${esc(BOT.note)}</p>` : ""}${BOT.warn ? `<p class="w">${esc(BOT.warn)}</p>` : ""}`;
+    if (!p) return top + `<p class="m">No plan yet. ${link.state === "linked" ? "The calculator sends one after each update." : "Open the game with Go live in the calculator, or paste a plan below."}</p>`;
+    const time = !r ? "" : r.took != null ? `Day ${r.day} took ${sec(r.took)}${r.took > 30000 ? " (over the 30 s target)" : ""}.` : `Day ${r.day}: ${sec(Date.now() - r.t0)} so far.`;
+    const box = (name, k, ss) => { const cap = k ? capOf({plan: p, steps}, k) : null;
+      return `<p style="margin-top:8px"><b>${esc(name)}</b>${k ? ` <span class="k">${n(Math.round((r && r.used[k]) || 0))} of ${cap == null ? "no budget" : n(Math.round(cap))} EUR</span>` : ""}${r && r.sec[k] ? ` <span class="k">· ${esc(r.sec[k])}</span>` : ""}</p>
+      <table>${ss.map(s => `<tr><td>${esc(stepText(s))}${s.why ? `<div class="k">${esc(s.why)}</div>` : ""}</td><td class="n">${s.cost != null && s.cost !== "" ? n(Math.round(+s.cost)) : ""}</td><td class="st ${esc(s.state || "")}">${esc(s.state || "to do")}${s.late ? " · late" : ""}</td></tr>`).join("")}</table>`; };
+    const other = steps.filter(s => !RUN[s.section]);
+    return top + `<p><b>Plan for day ${n(p.day)}</b>${p.day !== d ? ` <span class="w">(the game is on day ${n(d)})</span>` : ""} <span class="k">${p.from === "pasted" ? "pasted" : "from the calculator"} ${esc(new Date(p.got).toLocaleTimeString())} · reserve ${n(p.reserve)}</span></p>
+      ${time ? `<p class="m">${esc(time)}</p>` : ""}${SECTIONS.map(([k, name]) => (ss => ss.length ? box(name, k, ss) : "")(steps.filter(s => s.section === k))).join("")}${other.length ? box("Not known", "", other) : ""}
+      ${r && r.notes.length ? `<ul>${r.notes.slice(-6).map(x => `<li class="k">${esc(x)}</li>`).join("")}</ul>` : ""}`;
+  };
   const n = v => v == null || isNaN(v) ? "–" : Number(v).toLocaleString();
   const none = '<p class="m">Nothing read yet. Wait for the first read, or press Read now.</p>';
   const paneToday = () => !D ? none : `<table>
@@ -563,7 +1009,8 @@
   root.addEventListener("pointermove", e => { if (drag) place(e.clientX - drag.dx, e.clientY - drag.dy); });
   const endDrag = () => { if (drag) { drag = null; keep(); } };
   root.addEventListener("pointerup", endDrag); root.addEventListener("pointercancel", endDrag);
-  const onKey = e => { if (e.key === "Escape" && (AC.on || AC.picking)) { acStop(AC.on ? "Stopped with Esc." : "Picking cancelled."); return; } if (e.altKey && !e.ctrlKey && !e.metaKey && (e.code === "KeyF")) { e.preventDefault(); hidden = !hidden; paint(); } };
+  const onKey = e => {
+    if (e.key === "Escape" && (AC.on || AC.picking || BOT.on)) { if (BOT.on) botStop("Stopped with Esc."); if (AC.on || AC.picking) acStop(AC.on ? "Stopped with Esc." : "Picking cancelled."); return; } if (e.altKey && !e.ctrlKey && !e.metaKey && (e.code === "KeyF")) { e.preventDefault(); hidden = !hidden; paint(); } };
   document.addEventListener("keydown", onKey, true);
   let shape = "";
   function paint(){
@@ -576,12 +1023,14 @@
       <div class="pane" data-t="live"><p data-f="link"></p><p class="m" data-f="speed"></p><p class="m" data-f="info"></p><p class="w" data-f="stale"></p></div>
       <div class="stopbar" data-f="stopbar"></div>
       <div class="pane" data-t="today" data-f="today"></div><div class="pane" data-t="auto" data-f="auto"></div><div class="pane" data-t="stores" data-f="stores"></div><div class="pane" data-t="stock" data-f="stock"></div><div class="pane" data-t="checks" data-f="checks"></div>
+      <div class="pane" data-t="bot"><button class="a big go" data-bot="go" data-f="botgo"></button><div role="status" data-f="bot"></div>
+      <details><summary class="k">Paste a plan (for testing)</summary><textarea data-bot="paste" spellcheck="false" placeholder="{&quot;ff&quot;:&quot;plan&quot;,&quot;v&quot;:1,&quot;day&quot;:1,&quot;reserve&quot;:0,&quot;budgets&quot;:{},&quot;steps&quot;:[]}"></textarea><div class="r"><button class="a" data-bot="load">Load</button></div></details></div>
       <p class="m" role="status" data-f="msg"></p>
       <div class="r"><button class="a p" data-a="copy">Copy data</button><button class="a" data-a="read">Read now</button><button class="a" data-a="setup">Update setup</button></div></div>`);
     }
     host.style.display = hidden ? "none" : "";
     const put = (f, html) => { const el = root.querySelector(f); if (el && el.__h !== html) { el.__h = html; el.innerHTML = html; } };
-    if (mini) { put(".pill", `FF live${TAG ? " " + esc(TAG) : ""} · day ${day} ${ok ? "✓" : ""}${AC.on ? " · ● auto" : ""}`); return; }
+    if (mini) { put(".pill", `FF live${TAG ? " " + esc(TAG) : ""} · day ${day} ${ok ? "✓" : ""}${AC.on ? " · ● auto" : ""}${BOT.on ? " · ● bot" : ""}`); return; }
     put('[data-f="title"]', `FF live${TAG ? " · Mode " + esc(TAG) : ""} · day ${day}${D && D.maxDay ? "/" + esc(D.maxDay) : ""}`);
     put('[data-f="link"]', ok ? '<span class="ok">Linked ✓</span> The calculator follows the game live.' : link.state === "looking" ? "Looking for the FF calculator that opened this tab…" : "Not linked: click <b>Copy data</b> and paste it in the calculator (or use <b>Go live</b> there).");
     put('[data-f="speed"]', !ready || !lap.day || lap.day !== (D && D.day) ? "" : ok && lap.sent ? `Day ${esc(lap.day)} was on the calculator ${after(lap.sent - lap.seen)}${lap.sales ? `, its sales ${after(lap.sales - lap.seen)}` : ""}.`
@@ -595,7 +1044,9 @@
     if (tab === "stock") put('[data-f="stock"]', paneStock());
     if (tab === "checks") put('[data-f="checks"]', paneChecks());
     if (tab === "auto" && !root.activeElement?.matches?.('input[type="number"],select')) put('[data-f="auto"]', paneAuto());
-    put('[data-f="stopbar"]', AC.on ? `<button class="a stop" data-ac="stop">■ Stop auto-click</button>` : "");
+    if (tab === "bot") put('[data-f="bot"]', paneBot());
+    const bg = root.querySelector('[data-f="botgo"]'); put('[data-f="botgo"]', BOT.on ? "■ Stop the bot" : "▶ Start the bot"); bg.classList.toggle("go", !BOT.on); bg.classList.toggle("stop", BOT.on);
+    put('[data-f="stopbar"]', (AC.on ? `<button class="a stop" data-ac="stop">■ Stop auto-click</button>` : "") + (BOT.on ? `<button class="a stop" data-bot="stop">■ Stop the bot</button>` : ""));
     put('[data-f="msg"]', esc(note && Date.now() - noteAt < 6000 ? note : msg));
     root.querySelector('[data-a="copy"]').disabled = !ready;
     for (const k of ["read", "setup"]) root.querySelector(`[data-a="${k}"]`).disabled = busy === "setup";
@@ -611,6 +1062,8 @@
     paint();
   });
   root.addEventListener("click", async e => {
+    const bb = e.target.closest("button[data-bot]");
+    if (bb) { const k = bb.dataset.bot; if (k === "go") { if (BOT.on) botStop("Stopped."); else botStart(); } if (k === "stop") botStop("Stopped."); if (k === "load") loadPaste(); paint(); return; }
     const c = e.target.closest("[data-ac]");
     if (c && c.tagName !== "INPUT") {
       const k = c.dataset.ac;
@@ -662,7 +1115,8 @@
     if (!D || wantFull || D.setupDay !== mem.setup.setupDay) { await run(readAll); return true; }
     if (D.day !== dayRead) { await run(daily); return true; }
     if (salesWait && (salesWait.day !== D.day ? (salesWait = null, false) : Date.now() - salesWait.at > 2500)) { await run(salesAgain); return true; }
-    if (stale && Date.now() - lastInput > 20000 && setupTried !== D.day) {   // the setup clicks in the game: only while nobody is clicking
+    const botBusy = BOT.busy || BOT.prepping;   // the bot's day goes first: no setup clicks or slow pages meanwhile
+    if (stale && !botBusy && Date.now() - lastInput > 20000 && setupTried !== D.day) {   // the setup clicks in the game: only while nobody is clicking
       setupTried = D.day;
       await run(async () => {
         const before = [...unseen];
@@ -672,7 +1126,7 @@
       });
       return true;
     }
-    if (Date.now() - lastSlow > 20000 && (!dayLen || Date.now() - dayAt < dayLen/2)) {   // early in a day, far from the next one: rents and forecasts stay fresh too
+    if (!botBusy && Date.now() - lastSlow > 20000 && (!dayLen || Date.now() - dayAt < dayLen/2)) {   // early in a day, far from the next one: rents and forecasts stay fresh too
       lastSlow = Date.now();
       const k = Object.keys(SLOW)[slowNext++ % 4];
       await run(async () => { await quiet(SLOW[k]); deliver(); });
@@ -720,11 +1174,11 @@
     window.removeEventListener("message", onMsg);
     EVENTS.forEach(t => document.removeEventListener(t, touched, true));
     document.removeEventListener("keydown", onKey, true);
-    AC.on = false; AC.picking = false; unglow(); document.removeEventListener("mouseover", onOver, true); document.removeEventListener("click", onPick, true);
+    AC.on = false; AC.picking = false; unglow(); BOT.on = false; BOT.cut = true; document.removeEventListener("mouseover", onOver, true); document.removeEventListener("click", onPick, true);
     for (const w of waits) w.go(); waits.clear();
     host?.remove(); host = null; if (window.__ff && window.__ff.timer === timer) delete window.__ff;
   }
-  window.__ff = {timer, stop, read: () => { wantFull = true; }, data: () => D};
+  window.__ff = {timer, stop, read: () => { wantFull = true; }, data: () => D, bot: BOT, plan: p => takePlan(p, "pasted")};
   if (window.opener) hello();
   if (self.origin === "null") msg = "This tab was opened in a sandbox, so it can't read the game. Open your game normally, run the reader there and use Copy data.";
   paint();
