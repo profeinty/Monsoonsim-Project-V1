@@ -20,3 +20,6 @@ It sets `window.__FF_MODE` to the calculator mode, then adds a `<script>` tag fo
 ## B2B deals (reader v6, preview)
 
 The Auto tab checks B2B > B2B Offers and shows which open deals it would grab. Smart mode: enough stock in the warehouses and price at least cost x margin (default 1.15); bids go in 3% under the max price. Grab all mode skips those checks. One deal per product per day (the game's limit). It only previews for now; pressing Accept and placing bids are added once the open-deal screen and bid form have been seen in a running game.
+
+##📄 License
+MIT © Profeinty
