@@ -4,7 +4,7 @@
      the game setup, so it starts in seconds. */
   if (window.__ff && window.__ff.stop) window.__ff.stop();
   document.getElementById("ff-reader-box")?.remove();
-  const V = 4, GAP = 900, CLICK = 1500;   // the game blocks fast clicks: page reads at least GAP ms apart, clicks in Configuration CLICK ms
+  const V = 4, BUILD = "v5", GAP = 900, CLICK = 1500;   // the game blocks fast clicks: page reads at least GAP ms apart, clicks in Configuration CLICK ms
   const MODE = String(window.__FF_MODE || ""), TAG = MODE;   // the calculator mode the bookmark was made for (Mode 12i or Mode 14), set by loader.js
   const log = m => console.log("%c[FF] " + m, "color:#B4451C;font-weight:bold");
   const toNum = s => s == null ? null : +String(s).replace(/[^\d.]/g, "");
@@ -384,14 +384,76 @@
       p{margin:6px 0}p:empty{display:none}.m{color:#5a6660;font-size:12px}.w{color:#9a3412}.ok{color:#15803d;font-weight:600}
       .r{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}button.a{border:1px solid #999;background:#fff;color:#18231E;border-radius:5px;padding:6px 10px;cursor:pointer}button.p{background:#B4451C;border-color:#B4451C;color:#fff;font-weight:600}button:disabled{opacity:.55;cursor:default}
       .h{cursor:move;user-select:none;touch-action:none;margin:-10px -12px 0;padding:8px 12px;background:#B4451C;color:#fff;border-radius:5px 5px 0 0}.h .x{color:#fff}
-      .tabs{display:flex;gap:2px;margin:8px 0 2px;border-bottom:1px solid #D0D8D1}.tabs button{border:0;background:none;padding:5px 8px;cursor:pointer;color:#55655D;border-bottom:2px solid transparent;margin-bottom:-1px}.tabs button[aria-selected="true"]{color:#18231E;font-weight:600;border-bottom-color:#B4451C}
+      .tabs{display:flex;flex-wrap:wrap;gap:2px;margin:8px 0 2px;border-bottom:1px solid #D0D8D1}.tabs button{border:0;background:none;padding:5px 8px;cursor:pointer;color:#55655D;border-bottom:2px solid transparent;margin-bottom:-1px}.tabs button[aria-selected="true"]{color:#18231E;font-weight:600;border-bottom-color:#B4451C}
       .pane{max-height:min(320px,55vh);overflow:auto}table{border-collapse:collapse;width:100%;margin-top:4px}td,th{padding:3px 4px;border-top:1px solid #E2E7E1;text-align:left;vertical-align:top}th{font-size:11px;color:#55655D;font-weight:600}td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
       .bar{height:6px;background:#E2E7E1;border-radius:3px;overflow:hidden;margin-top:2px}.bar i{display:block;height:100%;background:#2A7546}.bar i.hi{background:#B2261E}
       ul{margin:4px 0;padding-left:18px}li{margin:3px 0}.k{color:#55655D;font-size:11px}
+      .stopbar:empty{display:none}.stopbar{margin-top:8px}button.stop{width:100%;background:#B2261E;border-color:#B2261E;color:#fff;font-weight:700}
+      input[type=number]{font:inherit;padding:2px 4px;border:1px solid #999;border-radius:4px}label{cursor:pointer}
       .pill{display:inline-flex;gap:6px;align-items:center;background:#FAFBF8;color:#18231E;border:2px solid #B4451C;border-radius:999px;padding:6px 12px;cursor:pointer;font-weight:600}
       @media (pointer:coarse){button.a{min-height:42px;padding:8px 14px}.x{min-width:40px;min-height:40px}.pill{min-height:42px}}
 </style>`;
-  const TABS = [["live", "Live"], ["today", "Today"], ["stores", "Stores"], ["stock", "Stock"], ["checks", "Checks"]];
+  const TABS = [["live", "Live"], ["today", "Today"], ["stores", "Stores"], ["stock", "Stock"], ["checks", "Checks"], ["auto", "Auto"]];
+
+  /* Auto-click (allowed by the Rexar XIV organizers): you pick the game's own buttons, it presses them in order, then waits and
+     repeats. Off every time the panel starts; Stop, Esc or × ends it. It only presses buttons and links: it never types into a
+     field or changes hidden data. A button whose words changed is skipped, so a moved layout can't make it press the wrong one. */
+  const CKEY = KEY + ":clicks", CLICKABLE = 'button,a[href],input[type=button],input[type=submit],[role=button],[onclick]';
+  const AC = {on: false, picking: false, every: 5, rounds: 0, done: 0, last: "", picks: []};
+  try { const q = JSON.parse(localStorage.getItem(CKEY)) || {}; AC.picks = q.picks || []; AC.every = +q.every || 5; AC.rounds = +q.rounds || 0; } catch (e) {}
+  const acSave = () => { try { localStorage.setItem(CKEY, JSON.stringify({picks: AC.picks, every: AC.every, rounds: AC.rounds})); } catch (e) {} };
+  const words = el => (el.innerText || el.value || el.getAttribute("aria-label") || el.title || "").replace(/\s+/g, " ").trim().slice(0, 60);
+  const selOf = el => {
+    const parts = [];
+    for (let e = el; e && e.nodeType === 1 && e !== document.body; e = e.parentElement) {
+      if (e.id) { parts.unshift("#" + window.CSS.escape(e.id)); break; }
+      let i = 1; for (let x = e; (x = x.previousElementSibling);) if (x.tagName === e.tagName) i++;
+      parts.unshift(e.tagName.toLowerCase() + ":nth-of-type(" + i + ")");
+    }
+    return parts.join(" > ");
+  };
+  const findPick = pk => { try { return document.querySelector(pk.sel); } catch (e) { return null; } };
+  const usable = el => el && el.isConnected && !el.disabled && el.getAttribute("aria-disabled") !== "true" && el.getClientRects().length > 0 && !host.contains(el);
+  let glow = null;
+  const unglow = () => { if (glow) { glow.el.style.outline = glow.o; glow = null; } };
+  const onOver = e => { if (!AC.picking) return; const el = e.target.closest && e.target.closest(CLICKABLE); if (!el || host.contains(el) || (glow && glow.el === el)) return;
+    unglow(); glow = {el, o: el.style.outline}; el.style.outline = "3px solid #B4451C"; };
+  const onPick = e => {
+    if (!AC.picking || e.composedPath().includes(host)) return;
+    const el = e.target.closest && e.target.closest(CLICKABLE);
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    AC.picking = false; unglow();
+    if (!el) { AC.last = "That isn't a button. Press Pick a button and try again."; paint(); return; }
+    AC.picks.push({sel: selOf(el), label: words(el)}); acSave(); AC.last = `Added “${words(el) || "button"}”.`; paint();
+  };
+  document.addEventListener("mouseover", onOver, true);
+  document.addEventListener("click", onPick, true);
+  const acStop = why => { if (!AC.on && !AC.picking) return; AC.on = false; AC.picking = false; unglow(); AC.last = why || "Stopped."; log("Auto-click: " + AC.last); paint(); };
+  const acRun = async () => {
+    if (AC.on || !AC.picks.length) return;
+    AC.on = true; AC.done = 0; AC.last = "Running…"; log("Auto-click on."); paint();
+    while (AC.on && !stopped) {
+      for (const pk of AC.picks) {
+        if (!AC.on) break;
+        const el = findPick(pk);
+        if (!usable(el)) AC.last = `Skipped “${pk.label || "button"}”: not on the screen right now.`;
+        else if (pk.label && words(el) !== pk.label) AC.last = `Skipped “${pk.label}”: that spot now says “${words(el)}”.`;
+        else { el.click(); AC.last = `Pressed “${pk.label || "button"}”.`; }
+        paint(); await sleep(CLICK);
+      }
+      AC.done++; paint();
+      if (AC.rounds && AC.done >= AC.rounds) { acStop(`Done: ${AC.done} round${AC.done === 1 ? "" : "s"}.`); break; }
+      for (let t = 0; AC.on && t < AC.every * 10; t++) await sleep(100);
+    }
+  };
+  const paneAuto = () => `<p><label><input type="checkbox" data-ac="on" ${AC.on ? "checked" : ""} ${AC.picks.length ? "" : "disabled"}> <b>Auto-click ${AC.on ? '<span class="ok">ON</span>' : "off"}</b></label></p>
+      <p class="k">Presses the buttons below in order, waits, then repeats. Esc or Stop ends it. It never types into fields.</p>
+      ${AC.picks.length ? `<table><tr><th>#</th><th>Button</th><th></th></tr>${AC.picks.map((pk, i) => `<tr><td>${i + 1}</td><td>${esc(pk.label || pk.sel)}</td><td class="n"><button class="x" data-ac="del" data-i="${i}" title="Remove" ${AC.on ? "disabled" : ""}>×</button></td></tr>`).join("")}</table>` : '<p class="m">No buttons yet. Press <b>Pick a button</b>, then click the game button you want pressed.</p>'}
+      <div class="r"><button class="a" data-ac="pick" ${AC.on ? "disabled" : ""}>${AC.picking ? "Click a game button…" : "Pick a button"}</button>${AC.picks.length ? `<button class="a" data-ac="clear" ${AC.on ? "disabled" : ""}>Clear all</button>` : ""}</div>
+      <p class="r"><label>Wait <input type="number" min="2" max="600" step="1" value="${AC.every}" data-ac="every" style="width:4.5em"> s between rounds</label>
+      <label>Stop after <input type="number" min="0" max="9999" step="1" value="${AC.rounds}" data-ac="rounds" style="width:4.5em"> rounds (0 = never)</label></p>
+      <p class="m">${AC.on ? `Round ${AC.done + 1}. ` : ""}${esc(AC.last)}</p>
+      <p class="k">If a button opens a new page, the panel closes and auto-click stops: run the bookmark again.</p>`;
   const n = v => v == null || isNaN(v) ? "–" : Number(v).toLocaleString();
   const none = '<p class="m">Nothing read yet. Wait for the first read, or press Read now.</p>';
   const paneToday = () => !D ? none : `<table>
@@ -433,7 +495,7 @@
   root.addEventListener("pointermove", e => { if (drag) place(e.clientX - drag.dx, e.clientY - drag.dy); });
   const endDrag = () => { if (drag) { drag = null; keep(); } };
   root.addEventListener("pointerup", endDrag); root.addEventListener("pointercancel", endDrag);
-  const onKey = e => { if (e.altKey && !e.ctrlKey && !e.metaKey && (e.code === "KeyF")) { e.preventDefault(); hidden = !hidden; paint(); } };
+  const onKey = e => { if (e.key === "Escape" && (AC.on || AC.picking)) { acStop(AC.on ? "Stopped with Esc." : "Picking cancelled."); return; } if (e.altKey && !e.ctrlKey && !e.metaKey && (e.code === "KeyF")) { e.preventDefault(); hidden = !hidden; paint(); } };
   document.addEventListener("keydown", onKey, true);
   let shape = "";
   function paint(){
@@ -444,18 +506,19 @@
       root.innerHTML = CSS + (mini ? `<button class="pill" data-a="max"></button>` : `<div class="b"><div class="h"><b data-f="title"></b><button class="x" data-a="min" title="Minimise (Alt+F hides)">–</button><button class="x" data-a="stop" title="Stop reading">×</button></div>
       <div class="tabs" role="tablist">${TABS.map(([k, n]) => `<button role="tab" data-tab="${k}">${n}</button>`).join("")}</div>
       <div class="pane" data-t="live"><p data-f="link"></p><p class="m" data-f="speed"></p><p class="m" data-f="info"></p><p class="w" data-f="stale"></p></div>
-      <div class="pane" data-t="today" data-f="today"></div><div class="pane" data-t="stores" data-f="stores"></div><div class="pane" data-t="stock" data-f="stock"></div><div class="pane" data-t="checks" data-f="checks"></div>
+      <div class="stopbar" data-f="stopbar"></div>
+      <div class="pane" data-t="today" data-f="today"></div><div class="pane" data-t="auto" data-f="auto"></div><div class="pane" data-t="stores" data-f="stores"></div><div class="pane" data-t="stock" data-f="stock"></div><div class="pane" data-t="checks" data-f="checks"></div>
       <p class="m" role="status" data-f="msg"></p>
       <div class="r"><button class="a p" data-a="copy">Copy data</button><button class="a" data-a="read">Read now</button><button class="a" data-a="setup">Update setup</button></div></div>`);
     }
     host.style.display = hidden ? "none" : "";
     const put = (f, html) => { const el = root.querySelector(f); if (el && el.__h !== html) { el.__h = html; el.innerHTML = html; } };
-    if (mini) { put(".pill", `FF live${TAG ? " " + esc(TAG) : ""} · day ${day} ${ok ? "✓" : ""}`); return; }
+    if (mini) { put(".pill", `FF live${TAG ? " " + esc(TAG) : ""} · day ${day} ${ok ? "✓" : ""}${AC.on ? " · ● auto" : ""}`); return; }
     put('[data-f="title"]', `FF live${TAG ? " · Mode " + esc(TAG) : ""} · day ${day}${D && D.maxDay ? "/" + esc(D.maxDay) : ""}`);
     put('[data-f="link"]', ok ? '<span class="ok">Linked ✓</span> The calculator follows the game live.' : link.state === "looking" ? "Looking for the FF calculator that opened this tab…" : "Not linked: click <b>Copy data</b> and paste it in the calculator (or use <b>Go live</b> there).");
     put('[data-f="speed"]', !ready || !lap.day || lap.day !== (D && D.day) ? "" : ok && lap.sent ? `Day ${esc(lap.day)} was on the calculator ${after(lap.sent - lap.seen)}${lap.sales ? `, its sales ${after(lap.sales - lap.seen)}` : ""}.`
       : lap.read ? `Day ${esc(lap.day)}: sales read ${after(lap.read - lap.seen)}.` : "");
-    put('[data-f="info"]', D && D.at ? `Last change ${esc(new Date(D.at).toLocaleTimeString())} · ${(D.stores || []).length} stores · sales: ${esc(D.salesFrom || "not found yet")}` : "Starting…");
+    put('[data-f="info"]', (D && D.at ? `Last change ${esc(new Date(D.at).toLocaleTimeString())} · ${(D.stores || []).length} stores · sales: ${esc(D.salesFrom || "not found yet")}` : "Starting…") + ` · reader ${BUILD}`);
     put('[data-f="stale"]', stale && busy !== "setup" ? `${esc(stale[0].toUpperCase() + stale.slice(1))}. The setup is read again when you stop clicking for 20 s, or now:` : "");
     for (const el of root.querySelectorAll("[data-tab]")) el.setAttribute("aria-selected", el.dataset.tab === tab);
     for (const el of root.querySelectorAll("[data-t]")) el.hidden = el.dataset.t !== tab;
@@ -463,16 +526,34 @@
     if (tab === "stores") put('[data-f="stores"]', paneStores());
     if (tab === "stock") put('[data-f="stock"]', paneStock());
     if (tab === "checks") put('[data-f="checks"]', paneChecks());
+    if (tab === "auto" && !root.activeElement?.matches?.('input[type="number"]')) put('[data-f="auto"]', paneAuto());
+    put('[data-f="stopbar"]', AC.on ? `<button class="a stop" data-ac="stop">■ Stop auto-click</button>` : "");
     put('[data-f="msg"]', esc(note && Date.now() - noteAt < 6000 ? note : msg));
     root.querySelector('[data-a="copy"]').disabled = !ready;
     for (const k of ["read", "setup"]) root.querySelector(`[data-a="${k}"]`).disabled = busy === "setup";
   }
+  root.addEventListener("change", e => {
+    const k = e.target.dataset && e.target.dataset.ac; if (!k) return;
+    if (k === "on") { if (e.target.checked) acRun(); else acStop(); }
+    if (k === "every") { AC.every = Math.min(600, Math.max(2, Math.round(+e.target.value || 5))); acSave(); }
+    if (k === "rounds") { AC.rounds = Math.min(9999, Math.max(0, Math.round(+e.target.value || 0))); acSave(); }
+    paint();
+  });
   root.addEventListener("click", async e => {
+    const c = e.target.closest("[data-ac]");
+    if (c && c.tagName !== "INPUT") {
+      const k = c.dataset.ac;
+      if (k === "stop") acStop();
+      if (k === "pick") { AC.picking = !AC.picking; AC.last = AC.picking ? "Click the game button to add. Esc cancels." : ""; if (!AC.picking) unglow(); }
+      if (k === "del") { AC.picks.splice(+c.dataset.i, 1); acSave(); }
+      if (k === "clear") { AC.picks = []; acSave(); AC.last = ""; }
+      paint(); return;
+    }
     const a = e.target.closest("[data-a],[data-tab]"); if (!a) return;
     const k = a.dataset.a, tell = m => { note = m; noteAt = Date.now(); paint(); };
     if (a.dataset.tab) { tab = a.dataset.tab; keep(); paint(); return; }
     if (k === "min" || k === "max") { mini = k === "min"; paint(); return; }
-    if (k === "stop") { stop(); log("Stopped. Paste the reader again to restart."); return; }
+    if (k === "stop") { acStop(); stop(); log("Stopped. Paste the reader again to restart."); return; }
     if (k === "read") { wantFull = true; tell("Reading everything again…"); return; }
     if (k === "setup") { wantSetup = "asked"; tell("The game setup is read next…"); return; }
     if (k === "copy" && D) {
@@ -567,6 +648,7 @@
     window.removeEventListener("message", onMsg);
     EVENTS.forEach(t => document.removeEventListener(t, touched, true));
     document.removeEventListener("keydown", onKey, true);
+    AC.on = false; AC.picking = false; unglow(); document.removeEventListener("mouseover", onOver, true); document.removeEventListener("click", onPick, true);
     for (const w of waits) w.go(); waits.clear();
     host?.remove(); host = null; if (window.__ff && window.__ff.timer === timer) delete window.__ff;
   }
