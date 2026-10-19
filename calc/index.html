@@ -3,7 +3,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<!-- FF calculator v32 (web) -->
+<!-- FF calculator v33 (web) -->
 <style>
 /* Layout: brand bar + game-data strip on top. Wide screens: inputs as a sticky tabbed sidebar (left),
    today's plan as the main column (right) that the page scrolls. Phones: the plan comes first. */
@@ -2048,9 +2048,9 @@ try { for (const sfx of ["", "-done", "-game"]) { const old = localStorage.getIt
    or no team storage here) gets a sign-in screen; with the team lock on, the team passcode is needed. With the lock on, every
    number in the team copy and in this device's own copy is sealed (AES-GCM, 256-bit key from the passcode via PBKDF2-SHA-256):
    without the passcode it reads as noise. The passcode is never stored; "Remember me" keeps only an unexportable key in this
-   browser, tied to the Claude account that unlocked it. A view that isn't cleared writes nothing to the team copy. */
+   browser, tied to the signed-in account that unlocked it. A view that isn't cleared writes nothing to the team copy. */
 /* the team lock's public check (salt, rounds, a sealed check word: never the passcode), built into the page so a device
-   that isn't signed in to Claude can still open with the team passcode */
+   that isn't signed in can still open with the team passcode */
 const SEC_EMBED = {"v": 1, "salt": "14AJdRPE/rsaIsrTWlIYnw==", "iter": 600000, "check": "ff1:PrIseAK1Lwr0TrvrY0qNQ+JwTQMUk7tyl5fqd/XXhNBTYXZW9bYvMA=="};
 const Sec = {access: "checking", lock: null, keys: new Map(), salt: "", owner: false, busy: false, form: "", noTeam: false};
 const SEC = {doc: "ff/lock", iter: 600000, tag: "ff1:", local: "ff1L:", check: "ff-team-ok", aad: new TextEncoder().encode("ff-team-v1"), flag: KEY + "-lock", wait: KEY + "-lockwait"};
@@ -2105,7 +2105,7 @@ async function sealLocalCopies(){
   for (const m of MODES) { let raw = null; try { raw = localStorage.getItem(SK(m)); } catch (e) {} if (raw && !isSealedLocal(raw)) sealLocal(m, m === MODE ? S : loadState(m)); }
 }
 
-/* "Remember me": the key (never the passcode), unexportable, in this browser's own storage, for one Claude account */
+/* "Remember me": the key (never the passcode), unexportable, in this browser's own storage, for one signed-in account */
 const idbDo = (mode, fn) => new Promise(res => {
   let rq; try { rq = indexedDB.open("ff-team-lock", 1); } catch (e) { res(null); return; }
   rq.onupgradeneeded = () => { try { rq.result.createObjectStore("k"); } catch (e) {} };
@@ -2116,7 +2116,7 @@ const idbDo = (mode, fn) => new Promise(res => {
     catch (e) { db.close(); res(null); }
   };
 });
-const idbKey = uid => uid ? "team:" + uid : "device";   // a Claude account's own key, or (no account here) this browser's
+const idbKey = uid => uid ? "team:" + uid : "device";   // a signed-in account's own key, or (no account here) this browser's
 const keepKey = (salt, key) => idbDo("readwrite", st => st.put({salt, key, uid: Sync.me || null}, idbKey(Sync.me)));
 const recallKey = () => idbDo("readonly", st => st.get(idbKey(Sync.me)));
 const dropKey = () => idbDo("readwrite", st => { st.delete("team"); return st.delete(idbKey(Sync.me)); });
@@ -2259,7 +2259,7 @@ function paintSec(){
     box.hidden = false;
     if (box.dataset.state !== "noteam") {
       box.dataset.state = "noteam"; Sec.form = "";
-      box.innerHTML = `<div class="sec-row good"><span class="sec-ic">${LOCK_ICON}</span><p><b>Opened with the team passcode.</b> This web copy keeps your numbers on this device only. Fill it from your game (Auto-fill below). For numbers shared with your team, use the <a href="https://claude.ai/artifact/LkEX5Y7jEsytXQ2qcb7EBE" target="_blank" rel="noopener">Claude version</a>.</p><button type="button" class="small" id="secLockNow">Lock this device</button></div>`;
+      box.innerHTML = `<div class="sec-row good"><span class="sec-ic">${LOCK_ICON}</span><p><b>Opened with the team passcode.</b> This web copy keeps your numbers on this device only. Fill it from your game (Auto-fill below). For numbers shared with your team, use the <a href="https://claude.ai/artifact/LkEX5Y7jEsytXQ2qcb7EBE" target="_blank" rel="noopener">team version</a>.</p><button type="button" class="small" id="secLockNow">Lock this device</button></div>`;
     }
   } else if (!gated) {
     box.hidden = false;
@@ -2267,8 +2267,8 @@ function paintSec(){
     if (box.dataset.state !== st) {
       box.dataset.state = st; Sec.form = "";
       box.innerHTML = `<div class="sec-row good"><span class="sec-ic">${LOCK_ICON}</span><p><b>Team lock is on.</b> Your numbers are encrypted; only people with the team passcode can open them.</p><button type="button" class="small" id="secLockNow">Lock this device</button>${canManage ? '<button type="button" class="small" data-sec-open="secChange">Change passcode</button>' : ""}</div>`
-        + (st.endsWith("-stale") ? '<p class="hint">Devices that aren\'t signed in to Claude still check the previous passcode: ask Claude to update the page.</p>' : "")
-        + (canManage ? passForm("secChange", "Change the passcode", "Everyone, you included, enters the new passcode once on each device. Then ask Claude to update the page, so devices that aren't signed in to Claude use the new one too.") : "");
+        + (st.endsWith("-stale") ? '<p class="hint">Devices that aren\'t signed in still check the previous passcode until the page is updated with the new one.</p>' : "")
+        + (canManage ? passForm("secChange", "Change the passcode", "Everyone, you included, enters the new passcode once on each device. Then update the page, so devices that aren't signed in use the new one too.") : "");
     }
   }
   box.querySelectorAll(".sec-form").forEach(f => { f.hidden = Sec.form !== f.id; });

@@ -5,7 +5,7 @@ Hosts the FF MonsoonSIM game reader so the **FF live** bookmark can load the new
 - `reader.js` is the reader (v8). It opens a draggable FF panel on the game tab with Live, Today, Stores, Stock, Checks, Auto and Bot tabs; Alt+F hides it. Auto-click (allowed by the Rexar XIV organizers) presses buttons you pick, in order, on a timer. It is off each time the panel opens, stops with Esc or the Stop bar, skips a button whose words changed, and never types into fields. The Bot tab plays the day from the calculator's plan (see below). Edit it and push to `main` to update everyone's bookmark.
 - `index.html` is the install page with the bookmarks for Mode 12i and Mode 14.
 - `ff-live.user.js` is the same loader as a Tampermonkey userscript: the FF panel opens by itself on every game tab, with no bookmark to click.
-- `calc/index.html` is the FF calculator as a web page (v32): https://profeinty.github.io/Secret-FF-Doomsday-Project/calc/. Same team passcode; numbers stay on each device (team sharing is only in the other version). Its Go live, FF live bookmark and Copy game reader all use `reader.js` from this site.
+- `calc/index.html` is the FF calculator as a web page (v33): https://profeinty.github.io/Secret-FF-Doomsday-Project/calc/. Same team passcode; numbers stay on each device (team sharing is only in the other version). Its Go live, FF live bookmark and Copy game reader all use `reader.js` from this site.
 - `docs/plan-format.md` is the message the calculator sends the bot each day, and the reports the bot sends back. `docs/plan-sample.json` is an example.
 - `test/` is a stand-in game for testing the bot without a real game. See [test/README.md](test/README.md).
 - `.nojekyll` makes GitHub Pages serve the files as they are.
