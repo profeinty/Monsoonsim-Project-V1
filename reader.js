@@ -1146,11 +1146,13 @@
     return rows;
   };
   const ecomSell = async (run, s) => {
-    const X = dash(), prod = s.product, price = prod ? shopPrice(prod) : null, have = X.cash != null ? whStock(prod, X.warehouses || []) : null;   // today's stock: a warehouse the dashboard doesn't show has none
+    const X = dash(), prod = s.product, price = prod ? shopPrice(prod) : null, stock = X.cash != null ? whStock(prod, X.warehouses || []) : null;   // today's stock: a warehouse the dashboard doesn't show has none
+    const owed = Object.values(BIDS.rows).map(fin).filter(o => o.so && o.result === "won" && !o.deliveredDay && prodIs(o.product, prod)).reduce((t, o) => t + Math.max(0, (o.qty || 0) - (o.allocated || 0)), 0);
+    const have = stock == null ? null : Math.max(0, stock - owed);   // what won B2B orders still need isn't for sale
     let qty = Math.floor(s.qty ?? s.qtyMax ?? 0);
     if (have != null && have < qty && have >= (s.qtyMin ?? qty)) qty = Math.floor(have);
     const no = !prod ? "the plan doesn't say which product" : price == null ? `no shop price for ${prod} on the dashboard to copy (selling prices are locked)` : !(qty > 0) ? "the plan gives no amount"
-      : have == null ? "can't read today's warehouse stock (the dashboard isn't on screen)" : have < qty ? `only ${n(have)} ${prod} in the warehouses` : "";
+      : have == null ? "can't read today's warehouse stock (the dashboard isn't on screen)" : have < qty ? `only ${n(have)} ${prod} in the warehouses${owed ? ` after the ${n(owed)} won B2B orders still need` : ""}` : "";
     if (no) { mark(s, "skipped", no); return; }
     if (!WEB.post && $id("MENU2_web1")) await readWeb(false);
     if (!WEB.post) { mark(s, "failed", "no + Post link on the Web Market"); oops(run); return; }

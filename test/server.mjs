@@ -10,7 +10,7 @@ const DIM = {P1: 0.005, P2: 0.005, P3: 0.005, P4: 0.05, P5: 0.0006, P6: 0.0005, 
 const MACH = {1: {name: "Machine A", price: 300000, cap: 10000, m2: 200, staff: 2}, 2: {name: "Machine B", price: 200000, cap: 6000, m2: 150, staff: 1}};
 const PLACE = {11: "Berlin Retail", 13: "Hamburg Retail", 17: "Cologne Retail", 26: "Dusseldorf Warehouse", 27: "Cologne Warehouse"};
 const KEYS = ["id", "batchid", "productCode", "from", "to", "qnt", "qntAlloc", "dayIn", "priority", "exp", "status"];
-let S, log;
+let S, log, REAL_CALC = false;
 const so = (id, o) => ({id, product: "P1", qty: 1000, kind: "bid", maxBid: 15, each: null, minBidders: 1, due: 9, penalty: 6000, ourBid: null, bids: [], req: 2, result: 3, status: "Completed", allocated: 0, allocDay: null, delivered: null, offer: id - 11, ...o});
 const reset = (o = {}) => {
   S = {day: 5, maxDay: 30, cash: +o.cash || 500000, od: 0,
@@ -36,7 +36,7 @@ const reset = (o = {}) => {
     S.wsos.push({id: 801, product: "P1", qty: 200, allocated: 0, buyer: "Web buyer"});
   }
   if (o.so || o.wfg) S.wstock[26] = {P1: 5000, P2: 1000};
-  if (o.mach) { S.machines = [{id: 9001, mac: 1, lc: 26, setup: "P1", made: 10000}, {id: 9002, mac: 2, lc: 26, setup: "P2", made: 0}]; S.wstock[26] = {P4: 30000, P5: 60000, P6: 20000}; }
+  if (o.mach) { S.machines = [{id: 9001, mac: 1, lc: 26, setup: "P1", made: 10000}, {id: 9002, mac: 2, lc: 26, setup: "P2", made: 0}]; S.wstock[26] = {...S.wstock[26], P4: 30000, P5: 60000, P6: 20000}; }
   // the stock as batches, for the allocate screen: the warehouse's in two lots each, a store's in one
   S.batches = [];
   for (const [lc, st] of Object.entries(S.wstock)) for (const [pc, q] of Object.entries(st)) if (q > 0 && /^P[123]$/.test(pc)) {
@@ -202,8 +202,8 @@ http.createServer((req, res) => {
     if (u.pathname === "/reader.js") return send(fs.readFileSync(READER, "utf8"), "text/javascript; charset=utf-8");
     if (u.pathname === "/game.html") return send(GAME);
     if (u.pathname === "/dash") return send(dash());
-    if (u.pathname === "/calc/") return send(fs.readFileSync(new URL("./calc-stub.html", import.meta.url), "utf8"));
-    if (u.pathname === "/reset") { reset({fail: q.get("fail") || "", so: q.get("so") === "1", wfg: q.get("wfg") === "1", mach: q.get("mach") === "1", cash: q.get("cash")}); return send("ok"); }
+    if (u.pathname === "/calc/") return send(fs.readFileSync(new URL(REAL_CALC ? "../calc/index.html" : "./calc-stub.html", import.meta.url), "utf8"));   // /reset?calc=real: the real calculator
+    if (u.pathname === "/reset") { REAL_CALC = q.get("calc") === "real"; reset({fail: q.get("fail") || "", so: q.get("so") === "1", wfg: q.get("wfg") === "1", mach: q.get("mach") === "1", cash: q.get("cash")}); return send("ok"); }
     if (u.pathname === "/log") return send(JSON.stringify({log, S}), "application/json");
     if (u.pathname === "/day") { S.day = +q.get("d"); return send("ok"); }
     if (u.pathname === "/m") { log.push({t: Date.now(), m: "GET", x: q.get("x")}); return send(page(MENU[q.get("x")]())); }

@@ -370,5 +370,19 @@ const pane = p => p.evaluate(new Function(`return ${sh('[data-f="bot"]')}.innerT
   check("S no page errors", !errs.length, errs.join("; "));
   await ctx.close();
 }
+{ // S2: a web post never takes stock that won B2B orders still need
+  const {ctx, p, errs} = await open("", MEM, "&so=1");
+  await p.evaluate(() => window.__ff.orders());
+  await p.evaluate(pl => window.__ff.plan(pl), {...PLAN, b2b: {rules: {autoShip: false}}, steps: [
+    {id: "s2:big", seq: 1, section: "ecom", action: "sell", target: "Americano", product: "Americano", qty: 1500},
+    {id: "s2:ok", seq: 2, section: "ecom", action: "sell", target: "Americano", product: "Americano", qty: 800}]});
+  await click(p, '[data-bot="go"]'); await runDone(p);
+  const S = await steps(p), L = await server(), st = id => S.find(s => s.id === id) || {};
+  for (const s of S) console.log("  ", s.id, "=>", s.st, "|", s.why);
+  check("S2 more than is free after the won orders: skipped", st("s2:big").st === "skipped" && /only 1,000 Americano .*4,000 won B2B orders/.test(st("s2:big").why), st("s2:big").why);
+  check("S2 what is free: posted", st("s2:ok").st === "done" && L.S.posts.length === 1 && L.S.posts[0].qnt === "800", JSON.stringify(L.S.posts));
+  check("S2 no page errors", !errs.length, errs.join("; "));
+  await ctx.close();
+}
 await b.close();
 console.log(fails ? `${fails} FAILED` : "ALL PASS"); process.exit(fails ? 1 : 0);
