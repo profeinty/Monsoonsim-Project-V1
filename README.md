@@ -4,7 +4,7 @@ Hosts the FF MonsoonSIM game reader so the **FF live** bookmark can load the new
 
 - `reader.js` is the reader (read-only). It opens a draggable FF panel on the game tab with Live, Today, Stores, Stock, Checks and Auto tabs; Alt+F hides it. Auto-click (reader v5, allowed by the Rexar XIV organizers) presses buttons you pick, in order, on a timer. It is off each time the panel opens, stops with Esc or the Stop bar, skips a button whose words changed, and never types into fields. Edit it and push to `main` to update everyone's bookmark.
 - `index.html` is the install page with the bookmarks for Mode 12i and Mode 14.
-- `calc/index.html` is the FF calculator as a web page (v29): https://profeinty.github.io/Monsoonsim-Project-V1/calc/. Same team passcode; numbers stay on each device (team sharing is only in the other version). Its Go live, FF live bookmark and Copy game reader all use `reader.js` from this site.
+- `calc/index.html` is the FF calculator as a web page (v30): https://profeinty.github.io/Monsoonsim-Project-V1/calc/. Same team passcode; numbers stay on each device (team sharing is only in the other version). Its Go live, FF live bookmark and Copy game reader all use `reader.js` from this site.
 - `.nojekyll` makes GitHub Pages serve the files as they are.
 
 ## Setup (once)

@@ -3,7 +3,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<!-- FF calculator v29 (web) -->
+<!-- FF calculator v30 (web) -->
 <style>
 /* Layout: brand bar + game-data strip on top. Wide screens: inputs as a sticky tabbed sidebar (left),
    today's plan as the main column (right) that the page scrolls. Phones: the plan comes first. */
@@ -157,7 +157,7 @@ details.sec>summary{list-style:none;cursor:pointer;display:flex;align-items:cent
 details.sec>summary::-webkit-details-marker{display:none}
 details.sec>summary h3{font:700 .74rem/1.2 var(--f-display);font-stretch:85%;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2)}
 @media (hover:hover){details.sec>summary:hover h3{color:var(--ink)}}
-details.sec>summary .count{margin-left:auto;font:500 .76rem/1 var(--f-num);color:var(--muted);white-space:nowrap}
+details.sec>summary .count{margin-left:auto;font:500 .76rem/1 var(--f-num);color:var(--muted);white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .sec-body{padding:2px 14px 16px;display:flex;flex-direction:column;gap:12px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,148px),1fr));gap:10px 12px;align-items:end}
 .fld{display:flex;flex-direction:column;gap:4px;min-width:0}
@@ -332,6 +332,13 @@ td.tkc,[data-tip]{cursor:pointer}   /* the whole Done cell ticks; iPhone/iPad on
 .who{margin-left:6px;font-size:.76rem;font-weight:500;color:var(--good)}
 .who:empty{display:none}
 .pt td.neg{color:var(--bad)}
+.pt.bsteps td{vertical-align:top}.pt td .meta{display:block;margin-top:2px;font-size:.78rem;color:var(--muted)}.pt.bsteps td.sec-c{color:var(--ink-2);font-size:.82rem;min-width:4.5em}
+.pt.bsteps tr.later>td{opacity:.78}@media (max-width:560px){.pt.bsteps th.sec-h,.pt.bsteps td.sec-c{display:none}.pt.bsteps .sec-m{display:block}}.pt.bsteps .sec-m{display:none;font-size:.74rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.meta-i{font-size:.72rem;color:var(--muted)}
+.cashchart{display:block;width:100%;height:auto;margin:6px 0 2px;background:var(--field);border:1px solid var(--line);border-radius:8px}
+.cashchart polyline{fill:none;stroke-width:2.2;vector-effect:non-scaling-stroke}.cashchart .low{stroke:var(--c1)}.cashchart .floor{stroke:var(--bad);stroke-dasharray:5 4}
+.cashchart .zero{stroke:var(--line-2);stroke-width:1;vector-effect:non-scaling-stroke}.cashchart .b2b{fill:var(--c3)}.cashchart .lowpt{fill:none;stroke:var(--accent);stroke-width:2;vector-effect:non-scaling-stroke}.cashchart text{fill:var(--muted);font:11px var(--f-num)}.cashchart text.lowt{fill:var(--ink)}
+.sw.ln-low{background:var(--c1)}.sw.ln-floor{background:var(--bad)}.sw.ln-b2b{background:var(--c3);border-radius:99px}
+details.more>summary{cursor:pointer;color:var(--ink-2);font-weight:600;margin:6px 0}
 .cmp th[scope=row]{font:600 .8rem/1.3 var(--f-body);text-transform:none;letter-spacing:0;color:var(--ink-2);background:transparent;border-top:1px solid var(--line);vertical-align:middle;white-space:nowrap}
 .cmp thead button{border:0;background:transparent;padding:0;font:700 .7rem/1.2 var(--f-display);font-stretch:85%;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);border-radius:4px}
 @media (hover:hover){.cmp thead button:hover{color:var(--ink)}}
@@ -1029,9 +1036,9 @@ input[type=password]:focus{background:var(--panel);border-color:var(--focus);out
 <script id="engine">
 "use strict";
 const STRAT = {
-  safe:       {label:"Safe",       reserve:7, cover:3,   payback:1/3, b2b:1.05, floor:1.20, note:"7 days of costs kept, stores hold lead + 3 days, machines only if they pay back in a third of the days left."},
-  balanced:   {label:"Balanced",   reserve:5, cover:2.5, payback:1/2, b2b:1.03, floor:1.15, note:"5 days of costs kept, stores hold lead + 2.5 days, machines that pay back in half the days left."},
-  aggressive: {label:"Aggressive", reserve:3, cover:2,   payback:0.7, b2b:1.02, floor:1.10, note:"3 days of costs kept, stores hold lead + 2 days, more machines, sharper prices and B2B floors."}
+  safe:       {label:"Safe",       reserve:7, cover:3,   payback:1/3, b2b:1.05, floor:1.20, odUse:0.5, bidCut:0.01, note:"7 days of costs kept, half the overdraft used, stores hold lead + 3 days, machines only if they pay back in a third of the days they can earn."},
+  balanced:   {label:"Balanced",   reserve:5, cover:2.5, payback:1/2, b2b:1.03, floor:1.15, odUse:0.8, bidCut:0.03, note:"5 days of costs kept, 80% of the overdraft used, stores hold lead + 2.5 days, machines that pay back in half the days they can earn."},
+  aggressive: {label:"Aggressive", reserve:3, cover:2,   payback:0.7, b2b:1.02, floor:1.10, odUse:1.0, bidCut:0.05, note:"3 days of costs kept, all the overdraft used, stores hold lead + 2 days, more machines, sharper prices and B2B floors."}
 };
 const MPRIO = {cost:"Lowest final made cost", area:"Most output per m²", payback:"Fastest payback", cheap:"Cheapest machine"};
 /* Presets: read from the two games' configuration, location, forecast and reports. */
@@ -1039,6 +1046,7 @@ const PRESETS = {
   coffee: () => ({
     g:{day:1,maxDay:80,cash:3500000,delinq:0,maxDelinq:50,odLimit:2500000,odUsed:0,odPct:100,lead:1,payTerms:5,share:55,salary:1400,hire:60000,
        report:2000,whRent:5,whM2:0,minM2:200,storeStep:50,whStep:500,tierQty:0,tierPct:0,spike:7.2,holidays:"",expiry:false,
+       b2bPayDays:5,b2bDueDays:3,payOffset:1,vendorToWh:true,arCounts:true,inConf:90,stressLate:2,costPad:3,odRate:60,horizon:"",lot:500,priceTol:2,botSec:30,prepSec:150,txSec:1,safeTarget:90,clearFloor:1,rentTerm:1,mkAgency:"MA",whCity:"",
        b2bShare:13,b2bPricePct:38,b2bMin:25,b2bBoost:1.25,mPrio:"cost",mkMode:"best",mkDiv:3,mSen:"",mAdu:"",mJun:""},
     P:[{name:"Americano",price:32,fg:10,raw:5.2,dim:0.005,shelf:30,wh:0,b2bFc:120000,bom:"1 Plastic Cup + 2 Straw + 1 Coffee"},
        {name:"Hot Chocolate",price:35,fg:13,raw:7.2,dim:0.005,shelf:25,wh:0,b2bFc:135000,bom:"1 Plastic Cup + 2 Straw + 1 Chocolate"},
@@ -1051,6 +1059,7 @@ const PRESETS = {
   juice: () => ({
     g:{day:1,maxDay:60,cash:2750000,delinq:0,maxDelinq:50,odLimit:0,odUsed:0,odPct:100,lead:2,payTerms:0,share:100,salary:1400,hire:60000,
        report:2000,whRent:0,whM2:0,minM2:100,storeStep:50,whStep:500,tierQty:20000,tierPct:30,spike:1,holidays:"",expiry:true,
+       b2bPayDays:5,b2bDueDays:3,payOffset:1,vendorToWh:true,arCounts:true,inConf:90,stressLate:2,costPad:3,odRate:60,horizon:"",lot:500,priceTol:2,botSec:30,prepSec:150,txSec:1,safeTarget:90,clearFloor:1,rentTerm:1,mkAgency:"MA",whCity:"",
        b2bShare:12,b2bPricePct:70,b2bMin:25,b2bBoost:1.25,mPrio:"cost",mkMode:"best",mkDiv:3,mSen:"",mAdu:"",mJun:""},
     P:[{name:"Apple Juice",price:26,fg:15,raw:"",dim:1/300,shelf:14,wh:0,b2bFc:40000,bom:""},{name:"Orange Juice",price:29,fg:17,raw:"",dim:1/300,shelf:14,wh:0,b2bFc:40000,bom:""},
        {name:"Melon Juice",price:31,fg:19,raw:"",dim:1/300,shelf:14,wh:0,b2bFc:40000,bom:""}],
@@ -1082,12 +1091,35 @@ const partsOf = S => {
 };
 const phaseOf = (day, maxDay) => { const left = maxDay - day; return left <= 6 ? "Close" : left <= 10 ? "Harvest" : day <= 5 ? "Land grab" : day <= 12 ? "Learn" : "Grow"; };
 
+/* B2B money timing, in days counted from the order day. pay = days from delivery until the client's money is in the bank;
+   due = days from accepting a deal to its delivery day; bill = when we pay the vendor for today's order. */
+const dd = v => Math.max(0, Math.ceil(n(v) - 1e-9));   // whole days (4.5 typed counts as 5)
+function b2bTie(g, lead){
+  const off = dd(g.payOffset), pay = dd(g.b2bPayDays) + off, due = dd(g.b2bDueDays);
+  const bill = n(g.payTerms) > 0 ? lead + dd(g.payTerms) + off : 0;
+  const vendPay = Math.max(lead, due) + pay, madePay = Math.max(lead + 1, due) + pay;
+  return {pay, due, bill, vendPay, madePay, vend: Math.max(1, vendPay - bill), made: Math.max(1, madePay - bill)};
+}
+/* stock the bot (or the game) says is on the way and not landed yet: it counts as stock, so it isn't ordered twice */
+function transitOf(S){
+  const day = Math.max(1, Math.round(n(S.g.day))), store = {}, wh = {};
+  for (const x of (S.book && S.book.inbound) || []) {
+    if (x.landed || !(n(x.arriveDay) >= day)) continue;   // on the arrival day it still counts as on the way
+    if (x.dest === "wh") wh[x.item] = (wh[x.item] || 0) + n(x.qty);
+    else { const j = S.P.findIndex(p => p.name === x.item); if (j >= 0) (store[x.city] = store[x.city] || S.P.map(() => 0))[j] += n(x.qty); }
+  }
+  return {store, wh};
+}
 /* The plan for one strategy: the same variables, formulas and strategy numbers as before. Order of money:
    keep N days of costs → new stores (the best set that the cash can open, stock and market) → every store's first lead+2 days
    of stock → marketing days kept → machines (with their raw materials) → B2B fund → the rest of the stock. */
-function plan(S, sk){
-  const g = S.g, P = S.P, st = STRAT[sk] || STRAT.balanced, step = 500;
-  const day = Math.max(1, n(g.day)), maxDay = n(g.maxDay), left = Math.max(0, maxDay - day), lead = n(g.lead), share = n(g.share)/100;
+function plan(S, sk, opt = {}){
+  const g = S.g, P = S.P, st = STRAT[sk] || STRAT.balanced, step = n(g.lot) > 0 ? n(g.lot) : 500, cap = opt.cap || {};
+  const day = Math.max(1, Math.round(n(g.day))), maxDay = Math.round(n(g.maxDay)), left = Math.max(0, maxDay - day), lead = dd(g.lead), share = n(g.share)/100;
+  const tie = b2bTie(g, lead), TR = transitOf(S), tIn = (c, j) => (TR.store[c.name] || [])[j] || 0;   // B2B money timing; stock already on the way
+  const CUT = cutoffsOf(g, {tie, lead, maxDay}), rawStop = day > CUT.lastRawPO, b2bStop = day > CUT.lastB2BAcceptVendor;   // output after these days can't be sold (or paid) in the game
+  const owed = P.map(p => ((S.book && S.book.orders) || []).filter(o => o.product === p.name && o.status !== "paid" && o.deliverDay == null).reduce((s, o) => s + n(o.qty), 0));   // B2B orders won, not delivered
+  const whFree = P.map((p, j) => Math.max(0, n(p.wh) + (TR.wh[p.name] || 0) - owed[j]));   // warehouse stock (and on the way) not promised to an order
   const phase = phaseOf(day, maxDay), cover = lead + st.cover;   // stores hold lead time + 2–3 days, in case the vendor runs out
   const hol = parseDays(g.holidays), holSoon = hol.filter(h => h > day && h <= day + cover);
   const spike = Math.max(1, n(g.spike));
@@ -1113,7 +1145,7 @@ function plan(S, sk){
   const MAXM = 7;   // the team's limit: at most 7 machines in all
   const sd = (c, j) => n(c.d[j])*share;
   const late = day + lead >= maxDay;
-  const sellDays = j => g.expiry && n(P[j].shelf) > 0 ? Math.min(left, n(P[j].shelf)) : left;   // stock beyond this can't sell (or expires)
+  const sellLeft = Math.max(0, left - lead + 1), sellDays = j => g.expiry && n(P[j].shelf) > 0 ? Math.min(sellLeft, n(P[j].shelf)) : sellLeft;   // stock beyond this can't sell (or expires)
   const target = (c, j) => { const d = sd(c, j); return Math.min(d*(cover + holSoon.length*(spike - 1)), d*sellDays(j)); };
   const m2Of = units => units.reduce((s, u, j) => s + u*(n(P[j].dim) || 0.005), 0);
   // the game rents space in steps: store space by 50 m², the warehouse by 500 m²
@@ -1133,10 +1165,10 @@ function plan(S, sk){
   const open = S.C.filter(c => c.open);
   const machStaff = S.own.reduce((s, o) => s + n(S.M[+o.type]?.staff), 0);
   const fixed = open.reduce((s, c) => s + n(c.rent)*storeArea(c) + n(g.salary), 0) + n(g.report) + machStaff + n(g.whRent)*n(g.whM2);
-  const odRoom = Math.max(0, n(g.odLimit) - n(g.odUsed))*clamp(n(g.odPct), 0, 100)/100;
+  const odRoom = Math.max(0, n(g.odLimit)*clamp(n(g.odPct), 0, 100)/100*(st.odUse ?? 1) - n(g.odUsed));
   const emerg = n(g.delinq) > 0 || n(g.cash) < fixed*3;
   const keepFixed = fixed*st.reserve;
-  let cash = n(g.cash) - keepFixed + odRoom;
+  let cash = n(g.cash) - (emerg ? fixed : keepFixed) + odRoom;
 
   // B2B units we expect to win, and the B2B price. Making a unit for B2B is worth what it would cost from the vendor,
   // but never more than its B2B price (B2B from vendor stock that loses money isn't done at all).
@@ -1149,7 +1181,7 @@ function plan(S, sk){
     const out = [];
     for (const c of list) P.forEach((p, j) => {
       const d = sd(c, j); if (d <= 0) return;
-      const have = c.open ? n(c.s[j]) : 0, t = target(c, j), need = t - have;
+      const have = c.open ? n(c.s[j]) + tIn(c, j) : 0, t = target(c, j), need = t - have;
       if (need > 0) out.push({c, j, d, have, t, need, cover: have/d, move: 0, q: 0, total: 0, urgent: 0, want: 0});
     });
     return out.sort((a, b) => a.cover - b.cover);
@@ -1168,7 +1200,7 @@ function plan(S, sk){
   // every store is stocked by the vendor, straight to the store.
   const dry = linesFor(open);
   const urgentNow = dry.reduce((s, L) => { if (skipUrgent(L)) return s; const u = urgentOf(L); return s + u*vend(L.j, u); }, 0);
-  const rawOwnEst = late ? 0 : P.reduce((s, p, j) => s + Math.min(ownCap[j], b2bU[j])*n(p.raw)*(lead + 1), 0);
+  const rawOwnEst = late || rawStop ? 0 : P.reduce((s, p, j) => s + Math.min(ownCap[j], b2bU[j])*n(p.raw)*(lead + 1), 0);
 
   // 1. new stores: the set of closed cities with the most total profit whose cash need fits
   const canExpand = !emerg && left > 10 && phase !== "Harvest" && phase !== "Close";
@@ -1199,8 +1231,8 @@ function plan(S, sk){
     return {lowRev, friendPer, total};
   };
   // a set of new stores fits when its cash need plus `reserve` days of marketing for every store fits the budget
-  const pool = canExpand ? cands.filter(x => x.profit > 0) : [];
-  const budget = cash - urgentNow - rawOwnEst;
+  const pool = canExpand ? cands.filter(x => x.profit > 0 && (!cap.storePool || cap.storePool.includes(x.c.name))) : [];   // planSafe can drop the weakest store
+  const budget = Math.min(cash - urgentNow - rawOwnEst, cap.stores ?? Infinity);
   const openMk = open.map(mkBase);
   for (const x of pool) x.mk = mkBase(x.c);
   const fits = set => { const c = set.reduce((s, x) => s + x.need, 0); return c <= budget && c + mkSplit([...openMk, ...set.map(x => x.mk)]).total*st.reserve <= budget; };
@@ -1224,7 +1256,7 @@ function plan(S, sk){
   const active = [...open, ...opened.map(x => x.c)];
   const retailV = P.map((_, j) => active.reduce((s, c) => s + sd(c, j), 0));
   const V = P.map((_, j) => retailV[j] + b2bU[j]);   // all sales per day: stores + B2B
-  const storeStock = P.map((_, j) => S.C.reduce((s, c) => s + n(c.s[j]), 0));
+  const storeStock = P.map((_, j) => S.C.reduce((s, c) => s + n(c.s[j]) + tIn(c, j), 0));
   const stock = P.map((p, j) => n(p.wh) + storeStock[j]);
   const overStore = P.map((_, j) => left > 0 && storeStock[j] > retailV[j]*left*1.1);   // stores hold more than they sell by the end
   const overWh = P.map((p, j) => left > 0 && n(p.wh) > 0 && n(p.wh) > b2bU[j]*left*1.1);   // the warehouse holds more than B2B takes by the end
@@ -1246,10 +1278,10 @@ function plan(S, sk){
   const ownMade = P.map((_, j) => Math.min(assigned[j], PV[j]));
   const rawFor = caps => {   // raw materials for lead + 1 days of production: the warehouse keeps no standing stock
     const need = {};
-    if (!late) P.forEach((p, j) => { if (!caps[j] || overWh[j]) return; for (const b of bomOf(p)) need[b.name] = (need[b.name] || 0) + b.q*caps[j]; });
+    if (!late && !rawStop) P.forEach((p, j) => { if (!caps[j] || overWh[j]) return; for (const b of bomOf(p)) need[b.name] = (need[b.name] || 0) + b.q*caps[j]; });
     return Object.entries(need).map(([name, perDay]) => {
       const r = S.R.find(r => r.name === name) || {cost: 0, wh: 0};
-      const q = Math.max(0, Math.ceil((perDay*(lead + 1) - n(r.wh))/step - 1e-9)*step);
+      const q = Math.max(0, Math.ceil((perDay*(lead + 1) - n(r.wh) - (TR.wh[name] || 0))/step - 1e-9)*step);
       return {name, perDay, q, cost: q*n(r.cost)};
     });
   };
@@ -1272,13 +1304,15 @@ function plan(S, sk){
   const mkStores = active.map(mkBase);
   const {lowRev, friendPer} = mkSplit(mkStores);
   const MEDIA = ["Media A", "Media B", "Media C"], mediaOf = [g.mSen, g.mAdu, g.mJun];   // what Seniors, Adults, Juniors respond to
+  const mkWant = mkStores.reduce((s, x) => s + x.want, 0), mkCap = Math.min(cap.mktDay ?? Infinity, Math.max(0, cash)/Math.max(1, st.reserve));
+  if (mkWant > mkCap) for (const x of mkStores) x.want *= mkCap/mkWant;
   for (const x of mkStores) {
-    x.budget = Math.round(x.want/100)*100;
+    x.budget = Math.floor(x.want/100 + 1e-9)*100;
     // each age group's share of the city's people goes to the medium it responds to; a group not known yet is split evenly
     const demo = Array.isArray(x.c.demo) && x.c.demo.some(v => n(v) > 0) ? x.c.demo.map(n) : [1, 1, 1], tot = demo.reduce((a, b) => a + b, 0);
     const media = {"Media A": 0, "Media B": 0, "Media C": 0};
     demo.forEach((v, i) => { const part = x.budget*v/tot; if (MEDIA.includes(mediaOf[i])) media[mediaOf[i]] += part; else for (const k of MEDIA) media[k] += part/3; });
-    const r = MEDIA.map(k => Math.round(media[k]/100)*100), top = r.indexOf(Math.max(...r));
+    const r = MEDIA.map(k => Math.floor(media[k]/100 + 1e-9)*100), top = r.indexOf(Math.max(...r));
     r[top] += x.budget - r.reduce((a, b) => a + b, 0);   // the rounding goes to the biggest medium, so the three add up to the budget
     x.media = Object.fromEntries(MEDIA.map((k, i) => [k, r[i]]));
   }
@@ -1291,24 +1325,27 @@ function plan(S, sk){
   const newM = [], bought = P.map(() => 0);
   let feedRes = 0, holdFor = -1;
   const rank = {area: x => -n(x.m.cap)/Math.max(1, n(x.m.m2)), payback: x => x.pb, cheap: x => n(x.m.price)}[g.mPrio] || (x => mUnit(x.m) + mRent(x.m));
-  if (S.M.length && !emerg && left > lead + 5) {
+  const earnDays = Math.max(0, left - lead - 1 - (g.arCounts === false ? tie.pay : 0) - Math.max(0, tie.due - lead - 1));
+  if (S.M.length && !emerg && left > lead + 5 && phase !== "Harvest" && phase !== "Close") {
     // when the product with the least output can't afford a machine, nobody above its level gets one either: the split stays even
     const stop = new Set(); let ceiling = Infinity;
     for (let guard = 0; guard < 7*P.length + 1; guard++) {
       if (S.own.length + newM.filter(m => m.ok).length >= MAXM) break;   // at most 7 machines in all
+      if (cap.machN != null && newM.filter(m => m.ok).length >= cap.machN) break;   // planSafe can drop the last machine
       const need = prodPool.filter(j => !stop.has(j) && assigned[j] < PV[j] && bought[j] < 6 && assigned[j] <= ceiling);
       if (!need.length) break;
       const j = lowest(need, -1), gap = PV[j] - assigned[j];
       const opts = S.M.map((m, mi) => {
         // a day's gain: what the made units are worth for B2B, minus raw materials and their warehouse space, operators and the machine's floor
         const use = Math.min(gap, n(m.cap)), daily = (makeWorth(j) - n(P[j].raw) - varRent(j))*use - n(m.staff) - mRent(m)*n(m.cap);
-        return {mi, m, use, daily, pb: daily > 0 ? n(m.price)/daily : Infinity, cost: n(m.price) + n(m.m2)*whRent*5, feed: use*n(P[j].raw)*(lead + 1)};
-      }).filter(x => x.use >= n(x.m.cap)*0.5 && x.pb <= left*st.payback);
+        return {mi, m, use, daily, pb: daily > 0 ? n(m.price)/daily : Infinity, cost: n(m.price), hold: n(m.m2)*whRent*5, feed: use*n(P[j].raw)*(lead + 1)};
+      }).filter(x => x.use >= n(x.m.cap)*0.5 && x.pb <= earnDays*st.payback);
       opts.sort((a, b) => rank(a) - rank(b) || a.pb - b.pb);
       if (!opts.length) { stop.add(j); continue; }
-      const b = opts.find(x => x.cost + x.feed <= cash);   // the preferred type, or a cheaper one that fits the cash
+      const machSpent = newM.filter(m => m.ok).reduce((s, m) => s + m.cost, 0);
+      const b = opts.find(x => x.cost + x.hold + x.feed <= cash && machSpent + x.cost <= (cap.mach ?? Infinity));   // the preferred type, or a cheaper one that fits the cash
       if (!b) { newM.push({...opts[0], j, ok: false}); stop.add(j); if (holdFor < 0) holdFor = j; ceiling = Math.min(ceiling, assigned[j]); continue; }
-      cash -= b.cost + b.feed; feedRes += b.feed; assigned[j] += n(b.m.cap); bought[j]++; newM.push({...b, j, ok: true});
+      cash -= b.cost + b.hold + b.feed; feedRes += b.feed; assigned[j] += n(b.m.cap); bought[j]++; newM.push({...b, j, ok: true});
     }
   }
   const madeCapNew = P.map((_, j) => Math.min(assigned[j], PV[j]));   // what each product gets from machines per day (all for B2B)
@@ -1326,23 +1363,37 @@ function plan(S, sk){
 
   // 6. weigh retail vs B2B from the forecasts; hold part of the spare cash for B2B (boost and minimum keep it big).
   //    Spare cash counts the first-days stock already bought, so the share matches the old split, but the fund never eats into it.
-  const unitCost = P.map((p, j) => { const frac = PV[j] > 0 ? Math.min(1, madeCapNew[j]/PV[j]) : 0; return {frac, cost: frac*finalMade(j) + (1 - frac)*bulk(j)}; });   // B2B: made first, then vendor
+  const unitCost = P.map((p, j) => { const frac = PV[j] > 0 ? Math.min(1, madeCapNew[j]/PV[j]) : 0; return {frac, cost: frac > 0 ? frac*finalMade(j) + (1 - frac)*bulk(j) : bulk(j), cash: frac*n(P[j].raw) + (1 - frac)*bulk(j)}; });   // B2B: made first, then vendor
   const retailPot = P.reduce((s, p, j) => s + retailV[j]*Math.max(0, n(p.price) - bulk(j)), 0);
   const b2bPot = P.reduce((s, p, j) => s + b2bU[j]*Math.max(0, b2bPrice[j] - unitCost[j].cost), 0);
   const wB2B = retailPot + b2bPot > 0 ? b2bPot/(retailPot + b2bPot) : 0;
   const fundShare = b2bPot > 0 ? Math.min(0.6, Math.max(n(g.b2bMin)/100, wB2B*Math.max(1, n(g.b2bBoost)))) : 0;
   const investable = Math.max(0, cash) + urgentSpent;
-  const b2bFund = late || emerg || phase === "Close" ? 0 : Math.min(Math.max(0, cash), investable*fundShare*(phase === "Harvest" ? 0.5 : 1));
-  cash -= b2bFund;
-  const b2bOk = j => b2bPrice[j] > unitCost[j].cost;   // only products whose B2B price beats cost get a share of the fund
+  const legacyFund = late || emerg || phase === "Close" ? 0 : investable*fundShare*(phase === "Harvest" ? 0.5 : 1);   // the old limit: now an upper bound
+  const toWh = g.vendorToWh !== false && S.mods?.whs !== false, dueN = Math.max(1, tie.due);
+  const b2bOk = j => b2bPrice[j] > unitCost[j].cost;
   const wsum = P.reduce((s, p, j) => s + (b2bOk(j) ? b2bU[j]*unitCost[j].cost : 0), 0);
-  const b2bPlan = P.map((p, j) => { const money = wsum > 0 && b2bOk(j) ? b2bFund*b2bU[j]*unitCost[j].cost/wsum : 0, units = unitCost[j].cost > 0 ? money/unitCost[j].cost : 0;
-    return {j, units, money, perDay: b2bU[j], days: b2bU[j] > 0 ? units/b2bU[j] : 0, price: b2bPrice[j], margin: b2bPrice[j] - unitCost[j].cost}; });
+  const freeUse = P.map((_, j) => Math.min(whFree[j], Math.max(0, b2bU[j] - madeCapNew[j])*dueN));   // stock already there covers this much of the B2B we expect
+  const fundUnits = P.map((p, j) => {
+    if (!toWh || !b2bOk(j) || wsum <= 0 || b2bStop) return 0;
+    const want = Math.max(0, (1 - unitCost[j].frac)*b2bU[j]*dueN - whFree[j]), share = legacyFund*b2bU[j]*unitCost[j].cost/wsum;
+    const k = down(Math.min(want, share/Math.max(1e-9, vend(j, want))), step);
+    return k > 0 && vend(j, k) < b2bPrice[j] ? k : 0;   // under the bulk tier the vendor price may not pay
+  });
   const focus = wB2B >= 0.55 ? "B2B" : wB2B <= 0.35 ? "Retail" : "Mixed";
 
   // 7. the rest of each store's stock target with what's left
+  const deepHold = cap.deep != null ? Math.max(0, cash - cap.deep) : 0; cash -= deepHold;   // planSafe can cap the rest of the store stock
   if (!emerg) for (const L of lines) fill(L, wantOf(L), plainOf(L));   // can't afford the bulk lot: buy only up to the target (no extra stock, no extra shelf space)
+  cash += deepHold;
   for (const L of lines) L.want = wantOf(L);
+  let room = Math.min(cap.b2b ?? Infinity, late || emerg ? 0 : Math.max(0, cash));
+  const fundJ = fundUnits.map((u, j) => u*vend(j, u)), sumJ = fundJ.reduce((a, b) => a + b, 0);
+  if (sumJ > room) fundUnits.forEach((u, j) => { const k = down(u*room/sumJ, step); fundUnits[j] = k; fundJ[j] = k*vend(j, k); });
+  const b2bFund = fundJ.reduce((a, b) => a + b, 0); cash -= b2bFund;
+  const b2bPlan = P.map((p, j) => ({j, units: fundUnits[j], money: fundJ[j], perDay: b2bU[j], made: madeCapNew[j],
+    days: b2bU[j] > 0 ? (fundUnits[j] + madeCapNew[j]*dueN)/b2bU[j] : 0, price: b2bPrice[j], margin: b2bPrice[j] - unitCost[j].cost,
+    cashCost: unitCost[j].cash, tieDays: unitCost[j].frac >= 0.5 ? tie.made : tie.vend}));
   const urgentShort = lines.some(L => L.urgent > 0 && L.q < L.urgent);
   const deepShort = !emerg && lines.some(L => L.want > L.q);
 
@@ -1352,7 +1403,11 @@ function plan(S, sk){
   const okNew = newM.filter(m => m.ok);
   const space = active.map(c => {
     const x = opened.find(o => o.c === c), sells = P.reduce((s, _, j) => s + sd(c, j), 0);
-    if (x) return {c, isNew: true, sells, opt: x.area, need: x.area, have: 0, act: "new", delta: x.area, after: x.area};
+    if (x) {
+      const lotM2 = up(m2Of(P.map((_, j) => { const L = lines.find(L => L.c === c && L.j === j); return L ? L.q : 0; }))*1.05, SSTEP);
+      if (lotM2 > x.area) { const more = n(c.rent)*(lotM2 - x.area); x.setup += more; x.keep += more*st.reserve; x.need += more*(1 + st.reserve); cash -= more*(1 + st.reserve); x.area = lotM2; }
+      return {c, isNew: true, sells, opt: x.area, need: x.area, have: 0, act: "new", delta: x.area, after: x.area};
+    }
     const opt = Math.max(Math.min(minM2, n(c.area) || Infinity), up(m2Of(P.map((_, j) => shelf(c, j)))*1.05, SSTEP));   // a store already below the minimum keeps its size
     const units = P.map((_, j) => { const L = lines.find(L => L.c === c && L.j === j), h = n(c.s[j]); return Math.max(h, Math.max(0, h - sd(c, j)*lead) + (L ? L.q : 0)); });
     const peak = up(m2Of(units)*1.05, SSTEP), have = n(c.area), need = Math.max(opt, peak), rel = down(have - need, SSTEP);
@@ -1367,7 +1422,7 @@ function plan(S, sk){
   for (const r of raws) { const st = rawHeld[r.name] || 0; rawHeld[r.name] = Math.max(st, Math.max(0, st - r.perDay*lead) + r.q); }
   const rawRows = Object.entries(rawHeld).filter(([, u]) => u > 0).map(([name, u]) => ({name, units: u, per: rawDim(name), m2: u*rawDim(name)}));
   const goodsRows = P.map((p, j) => {   // B2B stock at its peak (vendor B2B stock lands while stock goes out) + a day of output
-    const w = n(p.wh), out = Math.max(0, b2bU[j] - madeCapNew[j]), buy = b2bPlan[j].units*(1 - unitCost[j].frac);
+    const w = n(p.wh) + (TR.wh[p.name] || 0), out = Math.max(0, b2bU[j] - madeCapNew[j]), buy = b2bPlan[j].units;
     return {name: p.name, units: Math.max(w, Math.max(0, w - out*lead) + buy) + madeCapNew[j], per: n(p.dim) || 0.005};
   })
     .filter(x => x.units > 0).map(x => ({...x, m2: x.units*x.per}));
@@ -1405,11 +1460,13 @@ function plan(S, sk){
   // 8. prices and floors: stores sell vendor goods, so their floor is on the vendor cost; the B2B floor is on the B2B unit cost
   const prices = P.map((p, j) => {
     const {frac, cost: b2bCost} = unitCost[j], cost = bulk(j), now = n(p.price), floor = cost*st.floor;
+    const b2bEach = frac*(canMake(j) ? finalMade(j) : 0) + (1 - frac)*vend(j, Math.max(fundUnits[j], whFree[j], 1));
     let rec = now, why = "Keep";
-    if (overStore[j]) { rec = Math.max(floor, rec*0.95); why = "Overstocked: −5%"; }
+    if (phase === "Close" && storeStock[j] > retailV[j]*sellLeft) { rec = Math.max(cost*Math.max(1, n(g.clearFloor) || 1), rec*0.95); why = "Close: clear stock −5%"; }
+    else if (overStore[j]) { rec = Math.max(floor, rec*0.95); why = "Overstocked: −5%"; }
     else if (phase === "Land grab" && sk === "aggressive") { rec = Math.max(floor, rec*0.97); why = "Land grab: −3%"; }
     rec = Math.round(rec*10)/10;
-    return {p, j, cost, floor, rec, why, b2bCost, b2b: b2bCost*st.b2b, ecom: Math.round(rec*0.965*10)/10, frac, change: Math.abs(rec - now) >= 0.05};
+    return {p, j, cost, floor, rec, why, b2bCost, b2b: Math.max(b2bCost, b2bEach)*st.b2b, ecom: Math.round(rec*0.965*10)/10, frac, change: Math.abs(rec - now) >= 0.05};
   });
 
   const reserve = keepFixed + opened.reduce((s, x) => s + x.keep, 0) + mkTotal*st.reserve;
@@ -1417,7 +1474,418 @@ function plan(S, sk){
     canExpand, cands, opened, active, V, retailV, b2bU, PV, lines, newM, assigned, madeCapNew, raws, rawCost, rawShare, ownPlan, prodPool, holdFor, stock, storeStock, over, overStore, overWh, prices, space, wh, goods, running,
     BEST, mOpts, MAXM, minM2, minRented: isFinite(minRented) ? minRented : 0, shelfDays, steps: {store: SSTEP, wh: WSTEP}, finalMade: P.map((_, j) => canMake(j) ? finalMade(j) : null),
     mkStores, mkTotal, lowRev, friendPer, mkFactor, b2bFund, b2bPlan, fundShare, wB2B, focus, investable, urgentShort, deepShort,
+    unitCost, legacyFund, fundUnits, freeUse, whFree, owed, CUT, tie, earnDays, sellLeft, TR, step, vend: (j, q) => vend(j, q), sd: (c, j) => sd(c, j), target: (c, j) => target(c, j),
+    urgentCostOf: L => { const u = Math.min(L.q, L.urgent); return u*vend(L.j, u); },
     spent: {stores: opened.reduce((s, x) => s + x.setup, 0), mach: newM.filter(m => m.ok).reduce((s, m) => s + m.cost, 0), stock: lines.reduce((s, L) => s + L.total, 0)}};
+}
+
+/* ---------- v30: cash over the next days, section budgets, today's steps in order, the plan for the bot ---------- */
+const upTo = (x, s) => x > 0 ? Math.ceil(x/s - 1e-9)*s : 0, downTo = (x, s) => x > 0 ? Math.floor(x/s + 1e-9)*s : 0;
+const runOfR = R => R.running.rent + R.running.staff + R.running.machStaff + R.running.warehouse + R.running.report;
+const cutoffsOf = (g, R) => {
+  const t = R.tie, ar = g.arCounts !== false, m = R.maxDay;
+  return {lastVendorPO: m - R.lead - 1, lastRawPO: m - (ar ? Math.max(R.lead + 1, t.due) : t.madePay),
+    lastB2BAcceptVendor: m - (ar ? Math.max(R.lead, t.due) : t.vendPay), lastB2BAcceptStock: m - (ar ? t.due : t.due + t.pay)};
+};
+/* Day by day from today: costs come out first, then that day's sales come in. Two runs: base (forecast, holiday spikes) and
+   safety (only inConf% of retail sales, B2B money stressLate days late, future vendor prices +costPad%). Each day's lowest cash
+   must stay above the floor: the overdraft we allow ourselves, plus `reserve` days of running costs. */
+function cashTL(S, R){
+  const g = S.g, P = S.P, st = R.st, lead = R.lead, t = R.tie, day0 = R.day, maxDay = R.maxDay, lot = R.step, H0 = dd(g.horizon);
+  const sLate = dd(g.stressLate), pad = 1 + n(g.costPad)/100, Hmax = Math.max(0, Math.min(30, R.left));   // never past the last day
+  let H = Math.min(Hmax, H0 > 0 ? H0 : Math.max(7, t.bill + 2, t.madePay + sLate + 3, t.vendPay + sLate + 3));
+  const sim = Hmax;   // simulate to the longest horizon; H may grow while cash is still falling
+  const odEff = n(g.odLimit)*clamp(n(g.odPct), 0, 100)/100*(st.odUse ?? 1), hardFloor = -odEff;
+  const anySold = S.C.some(c => c.open && (c.sold || []).some(v => n(v) > 0)), conf = Math.min(anySold ? 100 : 75, n(g.inConf) || 90)/100;
+  const ev = n(S.book && S.book.wins) > 0 ? 1 : 0.7;   // until we've won a B2B deal, count 70% of the forecast B2B
+  const hol = new Set(parseDays(g.holidays)), spike = Math.max(1, n(g.spike));
+  const rows = []; for (let d = 0; d <= sim; d++) rows.push({d, day: day0 + d, phase: phaseOf(day0 + d, maxDay), retail: 0, retailS: 0, b2b: 0, b2bS: 0, bills: 0, billsS: 0, run: 0, capex: 0, interest: 0, marks: []});
+  const at = d => d >= 0 && d <= sim ? rows[d] : null;
+  const billAt = (d, a, aS = a) => { const r = at(d + t.bill); if (r) { r.bills += a; r.billsS += aS; } };
+  rows[0].capex += R.opened.reduce((s, x) => s + x.setup, 0) + R.newM.filter(m => m.ok).reduce((s, m) => s + m.cost, 0);
+  billAt(0, R.lines.reduce((s, L) => s + L.total, 0) + R.rawCost + R.b2bFund);   // today's orders, at today's prices
+  // running costs: the new stores' first day is already in their setup; marketing follows the phase
+  const fac = ph => ph === "Close" ? 0 : ph === "Harvest" ? 0.5 : 1, f0 = fac(R.phase) || 1, fixedRun = runOfR(R);
+  const newDaily = R.opened.reduce((s, x) => s + n(x.c.rent)*x.area + n(g.salary), 0);
+  // retail, store by store and product by product; each run buys its own reorders (up to the same stock target)
+  for (const [key, vol] of [["b", 1], ["s", conf]]) for (const c of R.active) P.forEach((p, j) => {
+    const sd = R.sd(c, j); if (sd <= 0) return;
+    const daily = (c.open && n((c.sold || [])[j]) > 0 ? n(c.sold[j]) : sd)*vol, price = R.prices[j].rec, target = R.target(c, j);
+    let inv = c.open ? n(c.s[j]) : 0; const arr = {};
+    const L = R.lines.find(L => L.c === c && L.j === j); if (L && L.q > 0) arr[lead] = (arr[lead] || 0) + L.q;
+    for (const x of (S.book && S.book.inbound) || []) if (x.dest !== "wh" && x.city === c.name && x.item === p.name && !x.landed && n(x.arriveDay) >= day0) arr[n(x.arriveDay) - day0] = (arr[n(x.arriveDay) - day0] || 0) + n(x.qty);
+    for (let d = 0; d <= sim; d++) {
+      inv += arr[d] || 0;
+      if (d >= 1 && day0 + d + lead < maxDay) {
+        const coming = Object.entries(arr).filter(([k]) => +k > d).reduce((a, [, v]) => a + v, 0), q = upTo(target - inv - coming, lot);
+        if (q > 0) { arr[d + lead] = (arr[d + lead] || 0) + q; const a = q*R.vend(j, q), r = at(d + t.bill); if (r) { if (key === "b") r.bills += a; else r.billsS += a*pad; } }
+      }
+      if (d === 0) continue;
+      const u = Math.min(inv, daily*(key === "b" && hol.has(day0 + d) ? spike : 1)); inv -= u;
+      if (key === "b") rows[d].retail += u*price; else rows[d].retailS += u*price;
+    }
+  });
+  // raw materials keep coming while the machines run
+  const rawDay = R.raws.reduce((s, r) => s + r.perDay*n((S.R.find(x => x.name === r.name) || {}).cost), 0), cut = cutoffsOf(g, R);
+  for (let d = 1; d <= sim; d++) if (rawDay > 0 && day0 + d <= cut.lastRawPO) billAt(d, rawDay, rawDay*pad);
+  // B2B money: made goods every production day (raw materials ordered up to the cutoff), stock already there and today's vendor
+  // goods once; each lands after the delivery day + the pay wait. Output that fills orders already won isn't counted twice.
+  const recv = (d, amt) => { if (d < 0) return; const r = at(d); if (r && day0 + d <= maxDay) r.b2b += amt; const rs = at(d + sLate); if (rs && day0 + d + sLate <= maxDay) rs.b2bS += amt; };
+  const OPEN = openOrders(S);
+  P.forEach((p, j) => {
+    const made = R.madeCapNew[j], pr = R.b2bPlan[j].price;
+    let owe = Math.max(0, R.owed[j] - n(p.wh) - (R.TR.wh[p.name] || 0));   // orders won that only the machines can fill
+    if (made > 0) for (let d = lead + 1; d <= sim && day0 + d - lead - 1 <= cut.lastRawPO; d++) { const k = Math.min(made, owe); owe -= k; if (made > k) recv(d + Math.max(0, t.due - lead - 1) + t.pay, (made - k)*pr*ev); }
+    if (R.freeUse[j] > 0) recv(t.vendPay, R.freeUse[j]*pr*ev);
+    if (R.b2bPlan[j].units > 0) recv(t.vendPay, R.b2bPlan[j].units*pr*ev);
+  });
+  for (const o of (S.book && S.book.orders) || []) {   // B2B orders already won and not paid yet
+    if (o.status === "paid") continue;
+    let payDay;
+    if (o.payDay != null) payDay = n(o.payDay);
+    else if (o.deliverDay != null) payDay = n(o.deliverDay) + t.pay;
+    else { const x = OPEN.find(x => x.o === o), now = !!(x && x.canNow);
+      if (n(o.due) < day0 && !now) continue;   // late, and nothing in the warehouse to send: no money counted
+      payDay = (now ? day0 : Math.max(n(o.due), day0)) + t.pay; }
+    if (payDay < day0) continue;   // paid already: the money is in the cash
+    recv(payDay - day0, n(o.qty)*n(o.each));
+  }
+  for (const b of (S.book && S.book.bills) || []) if (!b.paid) { const r = at(n(b.dueDay) - day0); if (r) { r.bills += n(b.amount); r.billsS += n(b.amount); } }
+  // the walk
+  let close = n(g.cash) - n(g.odUsed), closeS = close, low = null, firstB = null, firstBS = null, peak = {d: 0, amount: 0};
+  for (const r of rows) {
+    const mk = R.mkTotal*fac(r.phase)/f0;
+    r.run = fixedRun - (r.d === 0 ? newDaily : 0) + mk;
+    r.floor = hardFloor + Math.max(1, Math.min(st.reserve, maxDay - r.day + 1))*(fixedRun + mk);
+    r.interest = Math.max(0, -closeS)*n(g.odRate)/100/365;
+    r.trough = close - (r.run + r.capex + r.bills); r.troughS = closeS - (r.run + r.capex + r.billsS + r.interest);
+    close = r.trough + r.retail + r.b2b; closeS = r.troughS + r.retailS + r.b2bS; r.close = close; r.closeS = closeS;
+    r.head = r.troughS - r.floor;
+    if (r.b2b > 0 && firstB == null) firstB = r.day; if (r.b2bS > 0 && firstBS == null) firstBS = r.day;
+    if (r.bills > peak.amount) peak = {d: r.d, day: r.day, amount: r.bills};
+  }
+  const warnings = [];
+  if (!(H0 > 0)) while (H < sim && rows[H].troughS < rows[H - 1].troughS) H++;   // cash still falling at the end: look further
+  if (H < sim && rows[H].troughS < rows[H - 1].troughS) warnings.push(`Cash is still falling on day ${rows[H].day}, the end of the look-ahead.`);
+  for (const r of rows.slice(0, H + 1)) if (!low || r.head < low.head) low = {d: r.d, day: r.day, head: r.head, net: r.troughS, floor: r.floor};
+  return {H, rows: rows.slice(0, H + 1), low, hardFloor, conf, ev, firstB2B: {base: firstB, stress: firstBS}, billsPeak: peak, warnings, cutoffs: cut};
+}
+/* B2B orders won and not delivered yet, earliest due first; canNow = the warehouse stock that has landed covers it today */
+function openOrders(S){
+  const left = Object.fromEntries(S.P.map(p => [p.name, n(p.wh)]));
+  return ((S.book && S.book.orders) || []).filter(o => o.status !== "paid" && o.deliverDay == null).sort((a, b) => n(a.due) - n(b.due))
+    .map(o => { const q = n(o.qty), ok = q > 0 && (left[o.product] || 0) >= q; if (ok) left[o.product] -= q; return {o, q, canNow: ok}; });
+}
+/* per-section budgets: what today's plan spends in each section, and a small cap above it (price moves) taken only from money
+   that is unplanned and still free on the cash timeline, so spending every cap in full never goes below the floor */
+const MONEY = [["stores", "New stores (hire + first day)"], ["urgent", "Store stock, first days"], ["deep", "Store stock, the rest"], ["raw", "Raw materials"], ["mach", "Machines"], ["b2b", "B2B stock (vendor goods)"]];
+function budgetsOf(S, R, T){
+  const g = S.g, st = R.st, runDay0 = runOfR(R) + R.mkTotal;
+  const keepDays = Math.max(1, Math.min(st.reserve, R.left + 1)), keep = keepDays*runDay0, net0 = n(g.cash) - n(g.odUsed), spendable = net0 - T.hardFloor - keep;
+  const urgent = R.lines.reduce((s, L) => s + (L.q > 0 ? R.urgentCostOf(L) : 0), 0), stock = R.lines.reduce((s, L) => s + L.total, 0);
+  const planned = {stores: R.opened.reduce((s, x) => s + x.setup, 0), urgent, deep: Math.max(0, stock - urgent), raw: R.rawCost, mach: R.newM.filter(m => m.ok).reduce((s, m) => s + m.cost, 0), b2b: R.b2bFund};
+  const total = Object.values(planned).reduce((a, b) => a + b, 0), tol = Math.max(0, n(g.priceTol))/100;
+  const slack = Math.max(0, Math.min(spendable - total, T.low.head));
+  const caps = {};
+  for (const [k] of MONEY) { const p = planned[k], allow = total > 0 ? Math.min(p*tol, slack*p/total) : 0; caps[k] = {planned: p, cap: p + allow, left: allow}; }
+  caps.stock = {planned: urgent + planned.deep, cap: caps.urgent.cap + caps.deep.cap, left: caps.urgent.left + caps.deep.left};
+  const spacePerDay = R.space.reduce((s, x) => s + (x.act === "rent" ? n(x.c.rent)*x.delta : x.act === "release" ? -n(x.c.rent)*x.delta : 0), 0)
+    + (R.wh.act === "rent" ? n(g.whRent)*R.wh.delta : R.wh.act === "release" ? -n(g.whRent)*R.wh.delta : 0);
+  return {runDay0, keepDays, keep, net0, spendable, planned, total, over: total - spendable, caps, slack,
+    mkt: {perDay: R.mkTotal, room: R.mkTotal + Math.max(0, Math.floor(T.low.head/(T.low.d + 1 + keepDays)/100)*100)}, space: {perDay: spacePerDay}, run: {perDay: runOfR(R)}};
+}
+/* the plan that keeps cash above the floor: the B2B fund gets the room left between its bill day and the day its money is back;
+   if cash still dips, cut in this order: the rest of the store stock, marketing (at most half), the last machine, the weakest new store.
+   First-days stock and raw materials for running machines are never cut. If nothing helps: only the must-do steps. */
+const CUT_ORDER = ["deep", "mkt", "mach", "stores"];
+function evalPlan(S, sk, cap){ const R = plan(S, sk, {cap}), T = cashTL(S, R), B = budgetsOf(S, R, T); return {R, T, B, cap, short: Math.max(B.over, -T.low.head)}; }
+function withB2B(S, sk, cap){
+  const X0 = evalPlan(S, sk, {...cap, b2b: 0}); if (!(X0.R.legacyFund > 0) || !X0.R.fundUnits.some(u => u > 0) && !planWants(S, sk, cap)) return X0;
+  const t = X0.R.tie, back = Math.max(t.bill + 1, t.vendPay + dd(S.g.stressLate));
+  const heads = X0.T.rows.filter(r => r.d >= t.bill && r.d < back).map(r => r.head);
+  const room = Math.max(0, Math.min(X0.B.spendable - X0.B.total, ...(heads.length ? heads : [X0.T.low.head])));
+  return evalPlan(S, sk, {...cap, b2b: Math.min(cap.b2b ?? Infinity, room)});
+}
+const planWants = (S, sk, cap) => plan(S, sk, {cap: {...cap, b2b: Infinity}}).b2bFund > 0;
+const SAFE_MEMO = new Map();
+function planSafe(S, sk){
+  const key = sk + "|" + JSON.stringify([S.g, S.P, S.C, S.M, S.own, S.R, S.mods, S.book && S.book.inbound, S.book && S.book.orders, S.book && S.book.bills, S.book && S.book.wins]);
+  if (SAFE_MEMO.has(key)) return SAFE_MEMO.get(key);
+  let cap = {}, X = withB2B(S, sk, cap); const cuts = [], done = new Set();
+  for (let pass = 0; X.short > 0.5 && pass < 10; pass++) {
+    const k = CUT_ORDER.find(k => !done.has(k) && (k === "mkt" ? X.R.mkTotal > 0 : X.B.planned[k] > 0)); if (!k) break;
+    const c = {...cap}, sh = X.short, low = X.T.low;
+    if (k === "deep") c.deep = Math.max(0, X.B.planned.deep - sh);
+    if (k === "mkt") { c.mktBase = cap.mktBase ?? X.R.mkTotal;
+      const per = Math.ceil(sh/((X.B.over > 0 ? 0 : low.d + 1) + X.B.keepDays)/100)*100;
+      c.mktDay = Math.max(Math.floor(c.mktBase*0.5/100)*100, X.R.mkTotal - per); if (c.mktDay >= X.R.mkTotal) { done.add(k); continue; } }
+    if (k === "mach") c.machN = X.R.newM.filter(m => m.ok).length - 1;
+    if (k === "stores") { const lo = [...X.R.opened].sort((a, b) => a.profit - b.profit)[0]; c.storePool = X.R.opened.filter(x => x !== lo).map(x => x.c.name); }
+    const Y = withB2B(S, sk, c);
+    if (Y.short < sh - 0.5) {
+      cuts.push({k, before: k === "mkt" ? X.R.mkTotal : X.B.planned[k], after: k === "mkt" ? Y.R.mkTotal : Y.B.planned[k], day: low.day});
+      cap = c; X = Y; if (k === "deep" && !c.deep) done.add(k);
+    } else done.add(k);   // a cut that doesn't lift the low point is undone
+  }
+  let out;
+  if (X.short > 0.5 || X.R.emerg) {   // rescue: only what must be done, inside the cash in the bank
+    const Z = evalPlan(S, sk, {deep: 0, mktDay: 0, mach: 0, stores: 0, b2b: 0});
+    out = {...Z, cuts, mode: "mustOnly", why: X.short > 0.5 ? "cash" : "emerg", breach: X.T.low, rescueBudget: Math.max(0, Z.B.net0 - Z.T.hardFloor - Z.B.runDay0)};
+  } else out = {...X, cuts, mode: "normal"};
+  if (SAFE_MEMO.size > 60) SAFE_MEMO.clear();
+  SAFE_MEMO.set(key, out);
+  return out;
+}
+
+/* today's steps, in the order the game needs them: deliveries and deals first, then space before the stock that lands in it,
+   new stores before their stock, machines before their raw materials, then prices, marketing, bids and space to give back */
+const EST = {check: 1, b2bDeliver: 1.5, b2bAccept: 1.5, setMachine: 1.5, rentSpace: 3, rentStore: 6, vendorPO: 3, buyMachine: 3, rawPO: 3, b2bPO: 3, setPrice: 1.5, setMarketing: 3, b2bBid: 2, releaseSpace: 3};
+function stepsOf(S, X){
+  const g = S.g, P = S.P, R = X.R, B = X.B, T = X.T, day = R.day, has = partsOf(S), rescue = X.mode === "mustOnly", cut = T.cutoffs;
+  const acks = (S.book && S.book.acks) || {};   // a step the bot reported done is not planned again (its effect is in the game data or the book)
+  const steps = [], dropped = [], add = s => { s.id = `d${day}:${s.tick}`; s.estSec = +((EST[s.op] || 2)*Math.max(0.3, n(g.txSec) || 1)/3).toFixed(1);
+    if (s.op === "check" || !(acks[s.id] && acks[s.id].status === "done")) { s.seq = steps.length + 1; steps.push(s); } else dropped.push(s); return s; };
+  const notes = [];
+  const tol = Math.max(0.02*n(g.cash), 20000), arrive = day + R.lead, billDay = day + R.tie.bill;
+  const idOf = tick => `d${day}:${tick}`;
+  add({tick: "check:pre", op: "check", section: "check", must: true, action: `Check the dashboard: day ${day}, cash about ${f0(n(g.cash))}, delinquents ${f0(n(g.delinq))}. Stop if the day is different.`,
+    verify: {day, cash: n(g.cash), tol: Math.round(tol), delinqMax: n(g.delinq)}, why: "Every number below assumes this day and this cash."});
+  // B2B: deliver what the warehouse can fill (earliest due first), then accept deals we can fill
+  for (const x of openOrders(S)) { const o = x.o, late = n(o.due) < day;
+    if (x.canNow) add({tick: `b2b:deliver:${o.id}`, op: "b2bDeliver", section: "b2b", must: true, target: {order: o.id, product: o.product}, qty: x.q,
+      action: `Deliver B2B order ${o.id}: ${f0(x.q)} ${o.product} (due day ${n(o.due)}${late ? ", already late" : ""}).`, budget: 0, why: "Late deliveries cost penalties; paid only once delivered."});
+    else if (n(o.due) <= day) notes.push(`B2B order ${o.id} (${f0(x.q)} ${o.product}) is due day ${n(o.due)}, but the warehouse doesn't have it all yet.`); }
+  const b2bProducts = P.map((p, j) => {
+    const committed = R.owed[j], free = R.whFree[j], made = R.madeCapNew[j]*Math.max(0, R.tie.due - 1);   // every order not delivered yet comes off stock + output
+    const capQty = downTo(Math.max(0, n(p.wh) + (R.TR.wh[p.name] || 0) + made + R.b2bPlan[j].units - committed), R.step);
+    return {name: p.name, j, floorEach: +R.prices[j].b2b.toFixed(2), cashCost: +R.unitCost[j].cash.toFixed(2), capQty, free, madePerDay: R.madeCapNew[j], fundUnits: R.b2bPlan[j].units,
+      lastAcceptDay: R.b2bPlan[j].units > 0 ? cut.lastB2BAcceptVendor : cut.lastB2BAcceptStock};
+  });
+  const offers = Array.isArray(S.offers) ? S.offers.filter(o => o && o.open !== false && n(o.qty) > 0) : [];
+  const capLeft = Object.fromEntries(b2bProducts.map(b => [b.name, b.capQty]));
+  // the game's open offers (when the reader sends them): per product the best fixed deal we can fill, at or over the floor
+  if (has.b2b && !rescue && offers.length) for (const b of b2bProducts) {
+    if (!(day <= b.lastAcceptDay) || !isFinite(b.floorEach)) continue;
+    const fit = offers.filter(o => o.product === b.name && o.kind !== "bid" && n(o.price) >= b.floorEach && n(o.qty) <= capLeft[b.name])
+      .sort((x, y) => n(y.qty)*(n(y.price) - b.cashCost) - n(x.qty)*(n(x.price) - b.cashCost));
+    const o = fit[0]; if (!o) continue;
+    const st = add({tick: `b2b:accept:${b.name}`, op: "b2bAccept", section: "b2b", target: {product: b.name, offer: String(o.id)}, qty: n(o.qty), price: n(o.price), priceMin: b.floorEach, qtyMax: b.capQty,
+      action: `Accept B2B offer ${o.id}: ${f0(n(o.qty))} ${b.name} at ${f2(n(o.price))} each${o.due != null ? `, due day ${n(o.due)}` : ""}.`, budget: 0, budgetKey: "b2b",
+      why: `Pays ${f2(n(o.price))} against a floor of ${f2(b.floorEach)}; we can deliver ${f0(b.capQty)} by the due day. One deal per product a day.`});
+    if (!(acks[st.id] && acks[st.id].status === "done")) capLeft[b.name] -= n(o.qty);
+  }
+  else if (has.b2b && !rescue) for (const b of b2bProducts) if (b.capQty > 0 && day <= b.lastAcceptDay && isFinite(b.floorEach))
+    add({tick: `b2b:accept:${b.name}`, op: "b2bAccept", section: "b2b", target: {product: b.name}, qtyMax: b.capQty, priceMin: b.floorEach,
+      action: `Accept one fixed-price B2B deal for ${b.name} if it pays at least ${f2(b.floorEach)} each and is ${f0(b.capQty)} units or fewer.`,
+      budget: 0, budgetKey: "b2b", why: `We can deliver about ${f0(b.capQty)} by the due day; under ${f2(b.floorEach)} it doesn't beat cost. One deal per product a day.`});
+  // machines we own: switch, pause
+  for (const x of R.ownPlan) {
+    const nm = `${x.type?.name || "Machine"} #${x.i + 1}`;
+    if (x.to < 0 && R.prodPool.length) add({tick: `idle:${x.i}`, op: "setMachine", section: "machine", target: {machine: x.i, type: x.type?.name}, action: `Pause ${nm}: every product already gets enough output.`, budget: 0, why: "Spare output would only fill the warehouse."});
+    else if (x.to >= 0 && x.to !== x.cur) add({tick: `switch:${x.i}:${P[x.to].name}`, op: "setMachine", section: "machine", target: {machine: x.i, type: x.type?.name, product: P[x.to].name}, action: `Switch ${nm} to ${P[x.to].name}.`, budget: 0, why: "Keeps machine output split evenly over what B2B takes."});
+    else if (x.to >= 0 && R.overWh[x.to]) add({tick: `pause:${x.i}`, op: "setMachine", section: "machine", target: {machine: x.i, type: x.type?.name}, action: `Pause ${nm}: the warehouse holds more ${P[x.to].name} than B2B takes by the end.`, budget: 0, why: "Overstock can't go to the stores."});
+  }
+  // space first: the warehouse, new stores, extra store space (before the stock lands)
+  let whStep = null;
+  if (has.wh && R.wh.act === "rent") whStep = add({tick: "space:warehouse", op: "rentSpace", section: "rent_wh", target: {place: "warehouse"}, qty: R.wh.delta, qtyStep: R.steps.wh,
+    action: `Rent +${f0(R.wh.delta)} m² of warehouse (${f0(R.wh.have)} → ${f0(R.wh.after)} m², in ${f0(R.steps.wh)} m² steps).`, budget: Math.round(n(g.whRent)*R.wh.delta), perDay: true, budgetKey: "space",
+    verify: {whM2: R.wh.after}, why: "Machines, raw materials and B2B stock need the room before they arrive."});
+  const openStep = {}, spaceStep = {};
+  if (!rescue) for (const x of R.opened) openStep[x.c.name] = add({tick: `open:${x.c.name}`, op: "rentStore", section: "rent_shop", target: {city: x.c.name, store: `${x.c.name} Retail`}, qty: x.area, qtyStep: R.steps.store,
+    action: `Open a store in ${x.c.name}: rent ${f0(x.area)} m² and hire staff.`, budget: Math.round(x.setup), budgetKey: "stores", verify: {storeM2: x.area},
+    why: `Earns about ${fk(x.profit)} by the end after rent and staff.`});
+  for (const x of R.space) if (x.act === "rent" && !x.isNew) spaceStep[x.c.name] = add({tick: `space:${x.c.name}`, op: "rentSpace", section: "rent_shop", target: {city: x.c.name, store: `${x.c.name} Retail`}, qty: x.delta, qtyStep: R.steps.store,
+    action: `Rent +${f0(x.delta)} m² in ${x.c.name} (${f0(x.have)} → ${f0(x.after)} m²) before day ${arrive}.`, budget: Math.round(n(x.c.rent)*x.delta), perDay: true, budgetKey: "space",
+    verify: {storeM2: x.after}, why: "Today's order needs the shelf room when it lands."});
+  // store stock: one step per store and product; qtyMin = the first days (must), qtyMax = the most worth buying
+  const tolP = Math.max(0, n(g.priceTol))/100;
+  const mustL = L => Math.min(L.q, L.urgent || 0) > 0, ci = c => S.C.indexOf(c);   // the must-buy lines first, then store by store
+  for (const L of [...R.lines].sort((a, b) => mustL(b) - mustL(a) || ci(a.c) - ci(b.c) || a.j - b.j)) {
+    if (!(L.q > 0)) continue;
+    const c = L.c, j = L.j, urgentQ = Math.min(L.q, L.urgent || 0);
+    if (rescue && !(urgentQ > 0 && L.cover <= R.lead + 1)) continue;
+    const q = rescue ? urgentQ : L.q, unit = R.vend(j, q), tq = n(g.tierQty), tier = tq > 0 && q >= tq && urgentQ < tq;   // tier: a smaller amount pays the full price
+    const sellCap = downTo(Math.max(0, R.sd(c, j)*(g.expiry && n(P[j].shelf) > 0 ? Math.min(R.sellLeft, n(P[j].shelf)) : R.sellLeft) - L.have), R.step);
+    const qtyMax = Math.max(q, Math.min(sellCap, downTo(q*unit*(1 + tolP)/unit, R.step) + R.step));
+    const deps = [openStep[c.name], spaceStep[c.name]].filter(Boolean).map(s => s.id);
+    add({tick: `vendor:${c.name}:${P[j].name}`, op: "vendorPO", section: "stock_store", must: urgentQ > 0, target: {city: c.name, store: `${c.name} Retail`, product: P[j].name},
+      qty: q, qtyMin: urgentQ, qtyMax, unitPrice: +unit.toFixed(2), unitPriceMax: +(unit*(1 + tolP)).toFixed(2), budget: Math.round(q*unit), budgetKey: "stock",
+      arriveDay: arrive, billDay, deps, cover: +L.cover.toFixed(2), ...(tier ? {tierQty: tq, unitPriceMaxBelowTier: +(n(P[j].fg)*(1 + tolP)).toFixed(2)} : {}),
+      action: `Buy ${f0(q)} ${P[j].name} for ${c.name} (arrives day ${arrive}${R.tie.bill ? `, pay by day ${billDay}` : ""}).${urgentQ > 0 && urgentQ < q ? ` At least ${f0(urgentQ)}.` : ""}`,
+      why: `Forecast ${f0(R.sd(c, j))}/day; the store has ${f0(L.have)} (${L.cover.toFixed(1)} days). Stock target ${R.cover} days.`});
+  }
+  // machines, then their setup, then raw materials
+  const okM = rescue ? [] : R.newM.filter(m => m.ok), buyGroups = {};
+  okM.forEach(m => { const k = m.m.name; (buyGroups[k] = buyGroups[k] || []).push(m); });
+  const buySteps = Object.entries(buyGroups).map(([type, ms]) => add({tick: `buy:${type}`, op: "buyMachine", section: "machine", target: {type, products: [...new Set(ms.map(m => P[m.j].name))]}, qty: ms.length,
+    action: `Buy ${ms.length} × ${type} (for ${[...new Set(ms.map(m => P[m.j].name))].join(", ")}).`, budget: Math.round(ms.reduce((s, m) => s + m.cost, 0)), budgetKey: "mach",
+    deps: whStep ? [whStep.id] : [], why: ms.map(m => `${P[m.j].name}: pays back in ${m.pb.toFixed(1)} days`).join("; ")}));
+  okM.forEach((m, k) => add({tick: `setup:${m.m.name}:${k}`, op: "setMachine", section: "machine", target: {type: m.m.name, product: P[m.j].name, newIndex: k}, action: `Set new ${m.m.name} #${k + 1} to make ${P[m.j].name}.`,
+    budget: 0, deps: buySteps.filter(s => s.target.type === m.m.name).map(s => s.id), why: "Output is split evenly over what B2B takes."}));
+  for (const r of R.raws) if (r.q > 0) add({tick: `raw:${r.name}`, op: "rawPO", section: "stock_wh", must: true, target: {place: "warehouse", item: r.name}, qty: r.q, qtyMin: r.q, qtyMax: r.q + R.step,
+    unitPrice: +n((S.R.find(x => x.name === r.name) || {}).cost).toFixed(2), budget: Math.round(r.cost), budgetKey: "raw", arriveDay: arrive, billDay,
+    deps: whStep ? [whStep.id] : [], action: `Order ${f0(r.q)} ${r.name} to the warehouse (${R.lead + 1} days of production, arrives day ${arrive}).`, why: `Machines use ${f0(r.perDay)}/day; the warehouse keeps no standing stock.`});
+  if (!rescue) R.b2bPlan.forEach(b => { if (b.units > 0) add({tick: `b2b:stock:${P[b.j].name}`, op: "b2bPO", section: "stock_wh", target: {place: "warehouse", product: P[b.j].name}, qty: b.units, qtyMin: 0, qtyMax: b.units,
+    unitPrice: +R.vend(b.j, b.units).toFixed(2), budget: Math.round(b.money), budgetKey: "b2b", arriveDay: arrive, billDay, deps: whStep ? [whStep.id] : [],
+    action: `Order ${f0(b.units)} ${P[b.j].name} to the warehouse for B2B deals (arrives day ${arrive}).`, why: `B2B pays ${f2(b.price)} each about ${R.tie.vendPay} days after today; this is what the cash timeline can wait for.`}); });
+  // prices, marketing, bids
+  for (const x of R.prices) if (x.change) add({tick: `price:${x.p.name}`, op: "setPrice", section: "price", target: {product: x.p.name}, price: x.rec, priceMin: +x.floor.toFixed(2),
+    action: `Set ${x.p.name} to ${f2(x.rec)} in every store (now ${f2(n(x.p.price))}).`, budget: 0, why: x.why});
+  // marketing: one step per store and media agency ("Media A" is agency MA); what the bot last set needs no step (the game keeps it)
+  const mkSet = (S.book && S.book.mkSet) || {}, agOf = k => "M" + String(k).trim().slice(-1).toUpperCase();
+  if (has.mkt) for (const x of R.mkStores) {
+    const parts = has.media ? Object.entries(x.media || {}).map(([k, v]) => [agOf(k), n(v)]) : [[String(g.mkAgency || "MA").trim() || "MA", x.budget]];
+    for (const [ag, v] of parts) { const was = mkSet[`${x.c.name}|${ag}`];
+      if (v > 0 ? was !== v : n(was) > 0) add({tick: `mkt:${x.c.name}:${ag}`, op: "setMarketing", section: "marketing", must: was != null && v < n(was), target: {city: x.c.name, store: `${x.c.name} Retail`}, agency: ag, qty: v,
+        action: v > 0 ? `Marketing for ${x.c.name}: ${f0(v)}/day with ${ag}.` : `Stop ${ag} marketing in ${x.c.name} (set 0).`, budget: v, perDay: true, budgetKey: "mkt",
+        why: `${g.mkMode === "friend" ? "Friend's rule" : "FF best"}: ${f0(x.budget)}/day for the store, weighted by its profit${has.media ? ", split by who the city's people listen to" : ""}${R.mkFactor < 1 ? `, ×${R.mkFactor} for ${R.phase}` : ""}.`}); }
+  }
+  if (has.b2b && !rescue && offers.length) for (const b of b2bProducts) {
+    if (!isFinite(b.floorEach) || !(day <= cut.lastB2BAcceptStock)) continue;
+    for (const o of offers.filter(o => o.product === b.name && o.kind === "bid" && n(o.maxBid) >= b.floorEach).sort((x, y) => n(y.maxBid) - n(x.maxBid))) {
+      if (n(o.qty) > capLeft[b.name]) continue;
+      const price = Math.max(b.floorEach, Math.floor(n(o.maxBid)*(1 - R.st.bidCut)*100)/100);
+      const st = add({tick: `b2b:bid:${o.id}`, op: "b2bBid", section: "b2b", target: {product: b.name, offer: String(o.id)}, qty: n(o.qty), price, priceMin: b.floorEach, bidCut: R.st.bidCut,
+        action: `Bid ${f2(price)} on B2B offer ${o.id} (${f0(n(o.qty))} ${b.name}, max ${f2(n(o.maxBid))}).`, budget: 0, budgetKey: "b2b",
+        why: `${Math.round(R.st.bidCut*100)}% under the max bid, never under the floor ${f2(b.floorEach)}; only what we can deliver.`});
+      if (!(acks[st.id] && acks[st.id].status === "done")) capLeft[b.name] -= n(o.qty);
+    }
+  }
+  else if (has.b2b && !rescue) for (const b of b2bProducts) if (isFinite(b.floorEach) && day <= cut.lastB2BAcceptStock && b.capQty > 0)
+    add({tick: `b2b:bid:${b.name}`, op: "b2bBid", section: "b2b", target: {product: b.name}, priceMin: b.floorEach, bidCut: R.st.bidCut, qtyMax: b.capQty,
+      action: `Bid on ${b.name} B2B bids: ${Math.round(R.st.bidCut*100)}% under the max bid, never under ${f2(b.floorEach)}, ${f0(b.capQty)} units or fewer (with today's deal).`, budget: 0, budgetKey: "b2b", why: "Bids only pay if we can deliver; the floor keeps every win above cost."});
+  // space to give back, then the last check
+  for (const x of R.space) if (x.act === "release") add({tick: `release:${x.c.name}`, op: "releaseSpace", section: "release", must: rescue, target: {city: x.c.name, store: `${x.c.name} Retail`}, qty: x.delta, qtyStep: R.steps.store,
+    action: `Release ${f0(x.delta)} m² in ${x.c.name} (keep ${f0(x.after)} m²).`, budget: 0, verify: {storeM2: x.after}, why: "Saves rent; the shelf needs less."});
+  if (has.wh && R.wh.act === "release") add({tick: "release:warehouse", op: "releaseSpace", section: "release", must: rescue, target: {place: "warehouse"}, qty: R.wh.delta, qtyStep: R.steps.wh,
+    action: `Release ${f0(R.wh.delta)} m² of warehouse (keep ${f0(R.wh.after)} m²).`, budget: 0, verify: {whM2: R.wh.after}, why: "Saves rent."});
+  const nowPaid = steps.filter(s => !s.perDay && (s.billDay == null || s.billDay === day)).reduce((t, s) => t + (s.budget || 0), 0);
+  add({tick: "check:post", op: "check", section: "check", must: true, action: `Check the dashboard again: cash should be at least ${f0(n(g.cash) - nowPaid - tol)}. Report the steps.`,
+    verify: {cashMin: Math.round(n(g.cash) - nowPaid - tol)}, why: "Catches a step that spent more than planned."});
+  const byId = new Map(steps.map(s => [s.id, s]));
+  for (let more = true; more; ) { more = false; for (const s of steps) if (s.must) for (const d of s.deps || []) { const t = byId.get(d); if (t && !t.must) { t.must = true; more = true; } } }
+  // time: the bot gets botSec a day (prepSec in the prep stage); what doesn't fit moves to "if time is left"
+  const prep = S.g.prep != null ? !!S.g.prep : day === 1, limit = prep ? n(g.prepSec) || 150 : n(g.botSec) || 30;
+  for (const s of steps) s.slot = "now";
+  let used = steps.reduce((t, s) => t + s.estSec, 0);
+  const later = [s => s.op === "releaseSpace", s => s.op === "setPrice" && !/Close|Overstock/.test(s.why), s => s.op === "b2bBid", s => s.op === "vendorPO" && !s.must];
+  for (const f of later) for (const s of steps.filter(s => s.slot === "now" && f(s)).sort((a, b) => (a.budget || 0) - (b.budget || 0))) if (used > limit) { s.slot = "later"; used -= s.estSec; }
+  // "if time is left" steps go after the rest; the last check stays last (its cash floor already counts every step)
+  const post = steps.pop(), ordered = [...steps.filter(s => s.slot === "now"), ...steps.filter(s => s.slot === "later"), post];
+  ordered.forEach((s, i) => s.seq = i + 1);
+  const ids = new Set(ordered.map(s => s.id));
+  for (const s of ordered) if (s.deps) s.deps = s.deps.filter(d => ids.has(d));   // a dependency that's not listed is done already
+  return {steps: ordered, dropped, notes, b2bProducts, estSecNow: +used.toFixed(1), botSec: limit, overTime: used > limit};
+}
+/* the next days, so the bot can keep going if a new plan is late, and the days that force a re-plan */
+function nextOf(S, X){
+  const g = S.g, R = X.R, T = X.T, out = [], cut = T.cutoffs, P = S.P;
+  const marks = [];
+  for (let d = R.day + 1; d <= Math.min(R.maxDay, R.day + T.H); d++) if (phaseOf(d, R.maxDay) !== phaseOf(d - 1, R.maxDay)) marks.push({day: d, why: `${phaseOf(d, R.maxDay)} starts`});
+  for (const h of parseDays(g.holidays)) { const d = h - R.lead - 1; if (d > R.day && d <= R.day + T.H) marks.push({day: d, why: `order for the day ${h} holiday`}); }
+  for (const [k, d] of Object.entries(cut)) if (d > R.day && d <= R.day + T.H) marks.push({day: d, why: {lastVendorPO: "last vendor order", lastRawPO: "last raw order", lastB2BAcceptVendor: "last B2B deal from vendor stock", lastB2BAcceptStock: "last B2B deal from stock"}[k]});
+  if (T.firstB2B.stress) marks.push({day: T.firstB2B.stress, why: "first B2B money (check the pay wait)"});
+  if (T.billsPeak.amount > 0.25*Math.max(1, n(g.cash))) marks.push({day: T.billsPeak.day, why: `bills of ${fk(T.billsPeak.amount)}`});
+  marks.sort((a, b) => a.day - b.day);
+  for (let k = 1; k <= Math.min(3, T.H); k++) {
+    const r = T.rows[k], d = R.day + k, prev = T.rows[k - 1];
+    const steps = [];
+    if (d <= cut.lastVendorPO) for (const c of R.active) steps.push({op: "vendorPO", rule: "orderUpTo", target: {city: c.name, store: `${c.name} Retail`},
+      lines: P.map((p, j) => ({product: p.name, target: Math.round(R.target(c, j)), lot: R.step, qtyMax: downTo(R.sd(c, j)*Math.max(0, R.sellLeft - k), R.step), unitPriceMax: +(R.vend(j, R.step)*(1 + n(g.priceTol)/100)).toFixed(2)})).filter(x => x.target > 0)});
+    if (d <= cut.lastRawPO) for (const raw of R.raws) steps.push({op: "rawPO", rule: "rawUpTo", target: {place: "warehouse", item: raw.name}, perDay: raw.perDay, days: R.lead + 1, lot: R.step});
+    const mkF = phaseOf(d, R.maxDay) === "Close" ? 0 : phaseOf(d, R.maxDay) === "Harvest" && R.phase !== "Harvest" ? 0.5 : 1;
+    if (R.mkTotal > 0) steps.push({op: "setMarketing", rule: "mkKeep", factor: mkF, perDay: Math.floor(R.mkTotal*mkF/100)*100});
+    out.push({day: d, phase: phaseOf(d, R.maxDay), expect: {cash: Math.round(r.troughS), floor: Math.round(r.floor), room: Math.round(r.head)},
+      validIf: {cashMin: Math.round(prev.troughS - Math.max(0.1*Math.abs(prev.troughS), runOfR(R))), delinqMax: n(g.delinq)}, steps, marks: marks.filter(m => m.day === d)});
+  }
+  return {days: out, marks, replanOn: [...new Set(marks.map(m => m.day))]};
+}
+/* the checks the plan runs on itself before it goes to the bot */
+function checksOf(S, X, ST){
+  const R = X.R, B = X.B, T = X.T, out = [], chk = (id, ok, msg) => out.push({id, ok: !!ok, msg});
+  const nums = ST.steps.flatMap(s => [s.qty, s.qtyMin, s.qtyMax, s.budget, s.price, s.priceMin, s.unitPrice].filter(v => v != null));
+  chk("finite", nums.every(Number.isFinite), "every quantity, price and budget is a real number");
+  const capSum = MONEY.reduce((s, [k]) => s + B.caps[k].cap, 0);
+  chk("capsSum", X.mode === "mustOnly" || capSum <= B.spendable + 0.5, `section budgets ${fk(capSum)} fit the ${fk(B.spendable)} to spend`);
+  const bySec = {}; for (const s of [...ST.steps, ...(ST.dropped || [])]) if (s.budgetKey && !s.perDay) bySec[s.budgetKey] = (bySec[s.budgetKey] || 0) + (s.budget || 0);   // done steps too
+  const secOk = ["stores", "mach", "raw"].every(k => Math.abs((bySec[k] || 0) - B.planned[k]) <= 2*ST.steps.length + 1) && (X.mode === "mustOnly" || Math.abs((bySec.stock || 0) - B.caps.stock.planned) <= 2*ST.steps.length + 1)
+    && Object.entries(bySec).every(([k, v]) => !B.caps[k] || v <= B.caps[k].cap + 2*ST.steps.length + 1);
+  chk("sectionSum", secOk, "each section's steps add up to its budget and stay under its cap");
+  chk("lowPoint", X.mode === "mustOnly" || T.low.head >= -0.5, `lowest cash ${fk(T.low.net)} on day ${T.low.day} stays above the floor ${fk(T.low.floor)}`);
+  const lotOk = ST.steps.filter(s => s.op === "vendorPO" || s.op === "rawPO" || s.op === "b2bPO").every(s => s.qty % R.step === 0 || (n(S.g.tierQty) > 0 && s.qty === n(S.g.tierQty)));
+  const spaceOk = ST.steps.filter(s => s.op === "rentSpace" || s.op === "rentStore" || s.op === "releaseSpace").every(s => s.qty % s.qtyStep === 0);
+  const mkOk = ST.steps.filter(s => s.op === "setMarketing").every(s => s.qty % 100 === 0 && (!s.media || Object.values(s.media).reduce((a, b) => a + b, 0) === s.qty));
+  chk("rounding", lotOk && spaceOk && mkOk, `orders in lots of ${R.step}, store space in ${R.steps.store} m², warehouse in ${R.steps.wh} m², marketing in 100s`);
+  chk("limits", S.own.length + R.newM.filter(m => m.ok).length <= R.MAXM && !(R.late && ST.steps.some(s => s.op === "vendorPO")), `at most ${R.MAXM} machines; no orders that would land after the last day`);
+  chk("time", !ST.overTime, `~${ST.estSecNow}s of steps for ${ST.botSec}s`);
+  return out;
+}
+/* the bot reads steps in its own shape: section (b2b, rent_shop, rent_wh, machine, buy_raw, buy_store, marketing, price), action (a verb),
+   target (a name: city, store, warehouse, machine type, product, or the B2B offer number), product, qty, price, cost, term, agency, floor.
+   Rent qty is the TOTAL m² wanted. Steps the bot can't run (checks, B2B rules with no offer number, deliveries) stay on the calculator's list. */
+const BOTSEC = {b2bAccept: "b2b", b2bBid: "b2b", rentStore: "rent_shop", vendorPO: "buy_store", rawPO: "buy_raw", b2bPO: "buy_wh_goods", buyMachine: "machine", setMachine: "machine", setPrice: "price", setMarketing: "marketing"};
+function botStepOf(S, R, s){
+  const g = S.g, T = s.target || {}, term = Math.max(1, Math.round(n(g.rentTerm)) || 1);
+  const wh = String(g.whName || g.whCity || "").trim() || (R.active[0] || S.C[0] || {}).name || "";   // no warehouse yet: the first store's city
+  const space = s.op === "rentSpace" || s.op === "releaseSpace", whSpace = space && T.place === "warehouse";
+  const section = space ? (whSpace ? "rent_wh" : "rent_shop") : BOTSEC[s.op];
+  if (!section || ((s.op === "b2bAccept" || s.op === "b2bBid") && !T.offer)) return null;
+  const action = {b2bAccept: "accept", b2bBid: "bid", rentStore: "rent", rentSpace: "rent", releaseSpace: "release", vendorPO: "buy", rawPO: "buy", b2bPO: "buy", buyMachine: "buy", setPrice: "set", setMarketing: "set"}[s.op]
+    || (/^switch:/.test(s.tick) ? "switch" : /^(idle|pause):/.test(s.tick) ? "pause" : "set");
+  const target = section === "rent_shop" || section === "buy_store" || section === "marketing" ? T.city
+    : section === "rent_wh" || section === "buy_raw" || section === "buy_wh_goods" ? wh : section === "machine" ? (T.type || "") : section === "price" ? T.product : T.offer;
+  const v = s.verify || {}, qty = s.op === "rentStore" ? n(v.storeM2) : space ? n(whSpace ? v.whM2 : v.storeM2) : s.qty;
+  const rentOf = city => n((S.C.find(c => c.name === city) || {}).rent);
+  const cost = s.op === "rentStore" ? Math.round(rentOf(T.city)*n(v.storeM2)*term) : s.op === "rentSpace" ? Math.round(n(s.budget)*term)
+    : s.op === "setMarketing" ? n(s.qty) : s.op === "releaseSpace" || s.op === "setMachine" || s.op === "setPrice" || section === "b2b" ? 0 : Math.round(n(s.budget));
+  const out = {id: s.id, seq: s.seq, slot: s.slot, section, action, target: String(target ?? ""), qty, cost, budget: cost, must: !!s.must, deps: s.deps || [], text: s.action, why: s.why, estSec: s.estSec};
+  if (T.product || T.item) out.product = T.item || T.product;
+  if (section === "machine" && s.op === "setMachine") out.machineNo = T.machine != null ? n(T.machine) + 1 : T.newIndex != null ? n(T.newIndex) + 1 : null;   // which one: owned #n (as the game lists them), or the n-th bought today
+  if (section === "rent_shop" || section === "rent_wh") { out.term = term; out.qtyStep = s.qtyStep || (section === "rent_wh" ? R.steps.wh : R.steps.store); }
+  if (s.op === "setMarketing") { out.price = n(s.qty); out.agency = s.agency; }
+  if (s.op === "setPrice") out.price = s.price;
+  if (section === "b2b") { out.price = s.price; out.floor = s.priceMin; }
+  for (const k of ["qtyMin", "qtyMax", "unitPrice", "unitPriceMax", "tierQty", "unitPriceMaxBelowTier", "arriveDay", "billDay"]) if (s[k] != null) out[k] = s[k];
+  if (s.op === "vendorPO") out.m2Each = n((S.P.find(p => p.name === T.product) || {}).dim) || 0.005;
+  return out;
+}
+const emergWhy = (g, R) => n(g.delinq) > 0 ? `${f0(n(g.delinq))} delinquent${n(g.delinq) === 1 ? "" : "s"}` : `cash under 3 days of fixed costs (${fk(R.fixed*3)})`;
+const planHash = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16).padStart(8, "0"); };
+/* the plan object the game tab's bot follows ({ff:"plan", v:1, ...}): every number comes from here, nothing is fixed in the bot */
+function toPlan(S, X, mode){
+  const g = S.g, R = X.R, B = X.B, T = X.T, ST = stepsOf(S, X), NX = nextOf(S, X), checks = checksOf(S, X, ST);
+  const round = v => Math.round(v);
+  const budgets = Object.fromEntries([...MONEY.map(([k]) => k), "stock"].map(k => [k, {cap: round(B.caps[k].cap), planned: round(B.caps[k].planned), left: round(B.caps[k].left)}]));
+  budgets.mkt = {perDay: B.mkt.perDay, roomPerDay: B.mkt.room}; budgets.space = {perDay: round(B.space.perDay)}; budgets.run = {perDay: round(B.run.perDay)};
+  const bySection = {}; for (const s of ST.steps) if (s.budget) bySection[s.section] = (bySection[s.section] || 0) + s.budget;
+  const warnings = [...T.warnings];
+  if (!S.g.b2bPayRead) warnings.push(`B2B pay wait is ${n(g.b2bPayDays)} days from the calculator's inputs (not read from the game).`);
+  if (X.mode === "mustOnly") warnings.push(X.why === "cash" ? `Cash dips under the reserve on day ${X.breach ? X.breach.day : R.day}: only must-do steps.` : `Emergency (${emergWhy(g, R)}): only must-do steps.`);
+  warnings.push(...ST.notes);
+  // the bot's view: its sections, a number per section budget, and the cash floor in dashboard terms (cash shown minus what it spends)
+  const bot = ST.steps.map(s => botStepOf(S, R, s)).filter(Boolean), tolP = 1 + Math.max(0, n(g.priceTol))/100;
+  const sumOf = sec => bot.filter(s => s.section === sec).reduce((t, s) => t + n(s.cost), 0);
+  const botBudgets = {b2b: 0, rent_shop: round(sumOf("rent_shop")*tolP), rent_wh: round(sumOf("rent_wh")*tolP), machine: round(B.caps.mach.cap), buy_raw: round(B.caps.raw.cap),
+    buy_store: round(B.caps.stock.cap), buy_wh_goods: round(B.caps.b2b.cap), marketing: round(sumOf("marketing")), price: 0};
+  if (X.mode === "mustOnly") { botBudgets.buy_store = round(bot.filter(s => s.section === "buy_store").reduce((t, s) => t + n(s.cost), 0)*tolP); botBudgets.buy_raw = round(sumOf("buy_raw")*tolP); }
+  // a rescue day may use the whole overdraft for the must-do stock (it earns tomorrow's cash), keeping one day of costs
+  const floorNet = X.mode === "mustOnly" ? -n(g.odLimit)*clamp(n(g.odPct), 0, 100)/100 + B.runDay0 : T.hardFloor + B.keep, reserveDash = round(floorNet + n(g.odUsed));
+  const core = {steps: ST.steps, budgets: botBudgets, cash: {net0: round(B.net0), spendable: round(B.spendable), keep: round(B.keep)}};
+  const hash = planHash(JSON.stringify(core));
+  const okAll = checks.every(c => c.ok || c.id === "time");
+  return {ffplan: 1, v: 1, planId: `${mode}-d${R.day}-${R.sk}-${hash}`, mode, source: S.preset === "game" ? "game" : "preset", stage: (S.g.prep != null ? S.g.prep : R.day === 1) ? "prep" : "day", strategy: R.sk, day: R.day, maxDay: R.maxDay, phase: R.phase,
+    madeAt: Date.now(), dataAt: n(S.liveAt) || n(S.pastedAt) || 0, validUntilDay: R.day + 2, ok: okAll, rescue: X.mode === "mustOnly", warnings,
+    inputs: {lead: R.lead, payTerms: n(g.payTerms), b2bPayDays: n(g.b2bPayDays), b2bDueDays: n(g.b2bDueDays), lot: R.step, storeStep: R.steps.store, whStep: R.steps.wh, H: T.H},
+    cash: {cash: n(g.cash), odUsed: n(g.odUsed), net0: round(B.net0), hardFloor: round(T.hardFloor), keepDays: B.keepDays, keep: round(B.keep), spendable: round(B.spendable),
+      low: {day: T.low.day, cash: round(T.low.net), floor: round(T.low.floor), room: round(T.low.head)}},
+    reserve: reserveDash, b2bPayWait: R.tie.pay, b2bMoneyBackDays: {vendor: R.tie.vendPay, made: R.tie.madePay},
+    b2bBidFloor: Object.fromEntries(ST.b2bProducts.map(b => [b.name, b.floorEach])), floors: Object.fromEntries(ST.b2bProducts.map(b => [b.name, b.floorEach])),
+    verify: {day: R.day, cash: n(g.cash), tol: Math.round(Math.max(0.02*n(g.cash), 20000)), cashMin: (ST.steps.find(s => s.tick === "check:post") || {verify: {}}).verify.cashMin},
+    b2b: {rules: {onePerProductPerDay: true, fixedOnly: true, bidCut: R.st.bidCut}, products: ST.b2bProducts.map(({j, ...b}) => b)},
+    budgets: botBudgets, caps: budgets, bySection, cutoffs: T.cutoffs, steps: bot, all: ST.steps, estSecNow: ST.estSecNow,
+    limits: {botSec: ST.botSec, txSec: n(g.txSec) || 1, safeTargetPct: n(g.safeTarget) || 90, errorBudgetPct: 100 - (n(g.safeTarget) || 90), priceTolPct: n(g.priceTol), maxMachines: R.MAXM, maxPlanAgeSec: 90},
+    next: NX.days, replanOn: NX.replanOn, checks,
+    timeline: T.rows.map(r => ({day: r.day, retail: round(r.retailS), b2b: round(r.b2bS), bills: round(r.billsS), run: round(r.run), buys: round(r.capex), cash: round(r.troughS), floor: round(r.floor), room: round(r.head)}))};
 }
 </script>
 <script>
@@ -1463,7 +1931,28 @@ const ICON = {
 const SEV = {crit: "Urgent", warn: "Watch", act: "Coming up", note: "Note", good: "Good"};
 const VERDICT = {open: '<span class="pill good">Opens</span>', cash: '<span class="pill warn">Short of cash</span>', loss: '<span class="pill">Loses money</span>', wait: '<span class="pill">Not now</span>'};
 /* fields the game reader overwrites, so only these get a lock */
-const PASTED = new Set(["g.day", "g.maxDay", "g.cash", "g.delinq", "g.maxDelinq", "g.odLimit", "g.odUsed", "g.lead", "g.payTerms", "g.report", "g.salary", "g.hire", "g.whRent", "g.whM2", "g.spike", "g.holidays"]);
+const PASTED = new Set(["g.day", "g.maxDay", "g.cash", "g.delinq", "g.maxDelinq", "g.odLimit", "g.odUsed", "g.lead", "g.payTerms", "g.report", "g.salary", "g.hire", "g.whRent", "g.whM2", "g.spike", "g.holidays", "g.b2bPayDays", "g.b2bDueDays"]);
+/* what the bot (or the game) told us that the game screens don't show in one place: stock on the way, B2B orders won and not
+   paid yet, vendor bills still to pay, and the bot's step reports. The game's own lists win when the reader sends them. */
+function bookOf(b, D, day){
+  const B = Object.assign({inbound: [], orders: [], bills: [], acks: {}, wins: 0, mkSet: {}}, b && typeof b === "object" ? b : {});
+  for (const k of ["inbound", "orders", "bills"]) if (!Array.isArray(B[k])) B[k] = [];
+  if (!B.acks || typeof B.acks !== "object") B.acks = {};
+  if (!B.mkSet || typeof B.mkSet !== "object") B.mkSet = {};
+  D = D || {};
+  if (Array.isArray(D.b2bOrders)) {
+    B.orders = D.b2bOrders.map(o => ({id: String(o.id ?? `${o.product}:${o.due ?? o.dueDay}`), product: String(o.product || ""), qty: n(o.qty), each: n(o.each ?? o.price),
+      due: n(o.due ?? o.dueDay), deliverDay: o.delivered ? n(o.deliverDay) || day : null, payDay: o.payDay != null ? n(o.payDay) : null, status: o.paid ? "paid" : o.delivered ? "delivered" : "open"}));
+    B.wins = Math.max(n(B.wins), B.orders.length);
+  }
+  if (Array.isArray(D.inbound)) B.inbound = D.inbound.map(x => ({dest: x.dest === "wh" ? "wh" : "store", city: String(x.city || ""), item: String(x.item || x.product || ""), qty: n(x.qty), arriveDay: n(x.arriveDay)}));
+  if (Array.isArray(D.payables)) B.bills = D.payables.map(x => ({dueDay: n(x.dueDay), amount: n(x.amount)}));
+  B.inbound = B.inbound.filter(x => n(x.arriveDay) >= day);
+  B.orders = B.orders.filter(o => o.status !== "paid" && !(o.payDay != null && n(o.payDay) < day - 1) && !(o.deliverDay == null && n(o.due) > 0 && n(o.due) < day - 5));
+  B.bills = B.bills.filter(x => !x.paid && n(x.dueDay) >= day);
+  B.acks = Object.fromEntries(Object.entries(B.acks).filter(([k]) => n((k.match(/^d(\d+):/) || [])[1]) >= day - 1));
+  return B;
+}
 function applyGame(D){
   const fin = D.products.filter(p => p.price > 0);
   if (!fin.length || !D.cities || !D.cities.length) throw new Error("No products or cities found");
@@ -1481,7 +1970,9 @@ function applyGame(D){
       lead:D.lead ?? S.g.lead, payTerms:D.payTerms ?? S.g.payTerms, report:D.reportFee ?? S.g.report, salary,
       hire:D.hireFee && D.headcount ? D.hireFee*D.headcount : S.g.hire, whRent:D.whRent ?? S.g.whRent,
       whM2:(D.warehouses || []).filter(w => w.items.some(i => i.qty > 0) || w.machines > 0).reduce((s,w) => s + (w.area || 0), 0),
-      spike:D.spike || 1, holidays:(D.holidays || []).join(", "), expiry:D.fmcg === "Yes"},
+      spike:D.spike || 1, holidays:(D.holidays || []).join(", "), expiry:D.fmcg === "Yes",
+      b2bPayDays:D.b2bPayDays ?? S.g.b2bPayDays, b2bDueDays:D.b2bDueDays ?? S.g.b2bDueDays, b2bPayRead:D.b2bPayDays != null, prep:typeof D.prep === "boolean" ? D.prep : null,
+      whName:(() => { const w = (D.warehouses || []).filter(w => w && w.name).sort((a, b) => (b.area || 0) - (a.area || 0))[0]; return w ? String(w.name) : S.g.whName || ""; })()},
     P: fin.map(p => {
       const bom = (p.bom || []).map(b => `${b.q} ${b.name}`).join(" + ");
       const was = S.P.find(q => q.name === p.name);
@@ -1492,7 +1983,9 @@ function applyGame(D){
     }),
     R: raws.map(r => ({name:r.name, cost:rawCost[r.name] ?? "", wh:whQty(r.name), dim:r.dim || typed[r.name]?.dim || ""})),
     M: (D.machines || []).map(m => ({name:m.name, price:m.price, cap:m.cap, m2:m.m2, staff:(m.staff || 1)*(D.salary || 350)})),
-    own: [], C: [], soldFrom: D.salesFrom || ""
+    own: [], C: [], soldFrom: D.salesFrom || "", book: bookOf(S.book, D, D.day || 1),
+    offers: Array.isArray(D.b2bOffers) ? D.b2bOffers.filter(o => o && o.id != null && o.product).slice(0, 200).map(o => ({id: String(o.id).slice(0, 40), product: String(o.product), qty: n(o.qty),
+      price: n(o.price), maxBid: n(o.maxBid ?? o.max), kind: /bid/i.test(String(o.kind ?? o.type ?? "")) ? "bid" : "fixed", due: o.due != null ? n(o.due) : null, open: o.open !== false && !/taken|gone|closed|in$/i.test(String(o.state || ""))})) : []
   };
   // the game's modules, from its menus and setup. Only a module with no sign of it anywhere counts as missing.
   if (Array.isArray(D.menus) && D.menus.length) {
@@ -1529,6 +2022,8 @@ function normalize(s){
   s.locks = s.locks && typeof s.locks === "object" ? s.locks : {};
   s.g = Object.assign({}, PRESETS.coffee().g, s.g || {});
   for (const k of ["P", "R", "M", "own", "C"]) if (!Array.isArray(s[k])) s[k] = [];
+  s.book = bookOf(s.book, null, Math.max(1, n(s.g.day)));
+  if (!Array.isArray(s.offers)) s.offers = [];
   const NP = s.P.length;
   for (const c of s.C) {
     c.d = Array.from({length: NP}, (_, j) => (Array.isArray(c.d) ? c.d[j] : 0) ?? 0);
@@ -1865,7 +2360,8 @@ const xBtn = (t, i, name) => `<button type="button" class="x" data-del="${t}" da
 const openSecs = (() => { try { return JSON.parse(localStorage.getItem(KEY + "-open")) || {}; } catch (e) { return {}; } })();
 const COUNTS = {
   today: () => `Day ${f0(n(S.g.day))}/${f0(n(S.g.maxDay))}`,
-  b2b: () => `${f0(n(S.g.b2bShare))}% share`,
+  b2b: () => `${f0(n(S.g.b2bShare))}% share · paid ${f0(dd(S.g.b2bPayDays))}${dd(S.g.payOffset) ? `+${f0(dd(S.g.payOffset))}` : ""} d after delivery`,
+  safe: () => `${f0(n(S.g.inConf))}% of sales counted · bot ${f0(n(S.g.botSec))} s/day`,
   prod: () => `${S.P.length}`,
   cities: () => `${S.C.filter(c => c.open).length} open of ${S.C.length}`,
   mach: () => S.M.length ? `${S.own.length} owned · ${S.M.length} types` : "not allowed",
@@ -1876,7 +2372,14 @@ const BODY = {
   today: () => `<div class="grid">${fld("g.day", "Day")}${fld("g.maxDay", "Max day")}${fld("g.cash", "Cash in bank")}${fld("g.odLimit", "Overdraft limit")}${fld("g.odPct", "% of overdraft to use")}${fld("g.odUsed", "Overdraft used")}${fld("g.delinq", "Delinquents")}${fld("g.maxDelinq", "Max delinquents")}${fld("g.lead", "Vendor lead time")}${fld("g.payTerms", "Vendor pay terms")}${fld("g.share", "% of retail forecast we sell")}</div>
     <label class="chk"><input type="checkbox" id="${fid("g.expiry")}" data-k="g.expiry"${S.g.expiry ? " checked" : ""}><span>Products expire (FMCG on): caps stock at shelf life</span></label>`,
   b2b: () => `<div class="grid">${fld("g.b2bShare", "% of B2B forecast we win")}${fld("g.b2bPricePct", "B2B price % of retail")}${fld("g.b2bMin", "Min B2B fund %")}${fld("g.b2bBoost", "B2B boost ×")}</div>
-    <p class="hint">Compares what retail and B2B can each earn from their forecasts, then splits the investable cash. The boost and minimum keep the B2B fund on the big side. Latest game: we won 13% of B2B at ~32–44% of retail price.</p>`,
+    <p class="hint">Compares what retail and B2B can each earn from their forecasts, then splits the investable cash. The boost and minimum keep the B2B fund on the big side. Latest game: we won 13% of B2B at ~32–44% of retail price.</p>
+    <div class="grid">${fld("g.b2bPayDays", "B2B pay wait (days after delivery)")}${fld("g.b2bDueDays", "B2B due (days after accepting)")}${fld("g.payOffset", "Extra day before money lands")}</div>
+    <label class="chk"><input type="checkbox" id="${fid("g.vendorToWh")}" data-k="g.vendorToWh"${S.g.vendorToWh !== false ? " checked" : ""}><span>Vendor goods can go to the warehouse for B2B deals</span></label>
+    <p class="hint">B2B money isn't there the day you deliver: it lands the pay wait later${S.g.b2bPayRead ? " (read from the game)" : " (the game data doesn't show it yet, so this is your number)"}. Money spent on B2B stock comes back about ${f0(Math.max(dd(S.g.lead), dd(S.g.b2bDueDays)) + dd(S.g.b2bPayDays) + dd(S.g.payOffset))} days after the order, and the plan only spends what the cash over those days can wait for.</p>`,
+  safe: () => `<div class="grid">${fld("g.inConf", "% of retail sales counted (safety run)")}${fld("g.stressLate", "B2B money late by (days, safety run)")}${fld("g.costPad", "Vendor price rise % (safety run)")}${fld("g.odRate", "Overdraft interest % / year")}${fld("g.horizon", "Days to look ahead (blank = auto)")}${fld("g.priceTol", "Price wiggle room %")}</div>
+    <label class="chk"><input type="checkbox" id="${fid("g.arCounts")}" data-k="g.arCounts"${S.g.arCounts !== false ? " checked" : ""}><span>B2B money still owed on the last day counts in the score</span></label>
+    <div class="grid">${fld("g.lot", "Order lot (units)")}${fld("g.botSec", "Bot seconds per day")}${fld("g.prepSec", "Bot seconds in the prep stage")}${fld("g.txSec", "Bot seconds per step")}${fld("g.safeTarget", "Bot: % of steps it must get right")}${fld("g.clearFloor", "Close: clear stock down to cost ×")}${fld("g.rentTerm", "Rent term for the bot (days)")}${fld("g.mkAgency", "Media agency when the split isn't known", true)}${fld("g.whCity", "Warehouse location (if none rented yet)", true)}</div>
+    <p class="hint">The cash over the next days is checked twice: as forecast, and in a safety run with fewer retail sales, late B2B money and dearer stock. The plan keeps the safety run's lowest point above the overdraft you allow plus the strategy's days of costs. Section budgets = today's plan + the wiggle room, taken only from cash those days don't need.</p>`,
   prod: () => {
     const rows = [["price", "Price"], ["fg", "Vendor cost"], ["raw", "Raw cost"], ["b2bFc", "B2B fcst / day"], ["wh", "Warehouse"], ["dim", "m² / unit"], ["shelf", "Shelf"]];
     return `<div class="tw"><table class="tp"><thead><tr><th scope="col">Name</th>${S.P.map((p, i) => `<th scope="col"><div class="pcell">${txtCell(`P.${i}.name`, "Product name", true)}${lockBtn("P:" + p.name, p.name)}${xBtn("P", i, p.name)}</div></th>`).join("")}</tr></thead>
@@ -1913,7 +2416,7 @@ const BODY = {
     <p class="hint">Lowest sales = the weakest store's normal daily sales, read from the game (Cities → Sold / day); a store with none yet uses forecast × % we sell. Friend's rule gives every store that ÷ 3. FF best keeps the same total but gives bigger stores more (at least ½, at most 25% of the store's profit). Media split follows each city's population for the groups you've set; the others are split evenly.</p>`,
   costs: () => `<div class="grid">${fld("g.salary", "Staff / store / day")}${fld("g.hire", "Hiring / new store")}${fld("g.report", "Report fee / day")}${fld("g.whRent", "Warehouse rent / m²")}${fld("g.whM2", "Warehouse m² rented")}${fld("g.whStep", "Warehouse m² step")}</div>`
 };
-const SECS = [["today", "Today and game rules", true], ["b2b", "B2B vs retail weighting", false], ["prod", "Products", true], ["cities", "Cities", true], ["mach", "Production", null], ["mkt", "Marketing formula", false], ["costs", "Fixed costs", false]];
+const SECS = [["today", "Today and game rules", true], ["b2b", "B2B vs retail weighting", false], ["safe", "Cash safety and bot", false], ["prod", "Products", true], ["cities", "Cities", true], ["mach", "Production", null], ["mkt", "Marketing formula", false], ["costs", "Fixed costs", false]];
 function renderInputs(){
   const el = $("inputs"), a = document.activeElement, keepId = a && el.contains(a) ? a.id : "", top = el.scrollTop;
   el.innerHTML = `<div class="in-head"><h2>Inputs</h2><span class="hint">${LOCK_ON}Locked values are kept on auto-fill</span><a href="#plan" data-jump="plan" class="to-plan">Back to plan ↑</a></div>`
@@ -1981,8 +2484,61 @@ function renderPlan(){
   if (R.phase === "Harvest") todo.push(["warn", `Harvest: buy only what sells before the last day${has.b2b ? "; take B2B deals you can fill from stock" : ""}.`]);
   if (R.phase === "Close") todo.push(["crit", `Close: no big buys, ${has.mkt ? "stop marketing, " : ""}sell everything down, release space. Cash is scored, stock isn't.`]);
   if (R.late) todo.push(["warn", "Too late for vendor orders: they'd arrive after the last day."]);
+  const T = XS.T, B = XS.B, PL = PLAN, tie = R.tie, acks = (S.book && S.book.acks) || {};
+  const CUTN = {deep: "the rest of the store stock", mkt: "marketing / day", mach: "machines", stores: "new stores"};
+  if (XS.mode === "mustOnly") todo.push(["crit", `${XS.why === "cash" ? `<b>Cash dips under the reserve</b> on day ${f0((XS.breach || T.low).day)} even without extras` : `<b>Emergency (${esc(emergWhy(g, R))})</b>`}: today only the must-do steps (first days of stock, raw materials for running machines, B2B deliveries), inside ${fk(XS.rescueBudget)}.`]);
+  else if (XS.cuts.length) todo.push(["warn", `To keep cash above the floor (lowest on day ${f0(XS.cuts[0].day)}), the plan cut ${XS.cuts.map(c => `${CUTN[c.k]} ${fk(c.before)} → ${fk(c.after)}`).join(", ")}.`]);
+  for (const w of T.warnings) todo.push(["warn", esc(w)]);
+  if (PL) for (const w of PL.warnings.filter(w => /^B2B order /.test(w))) todo.push(["crit", esc(w)]);
+  if (PL) for (const c of PL.checks.filter(c => !c.ok)) todo.push([c.id === "time" ? "warn" : "crit", c.id === "time" ? `The steps take ~${PL.estSecNow}s for the bot's ${PL.limits.botSec}s: the ones marked “if time is left” go last.` : `Plan check failed: ${esc(c.msg)}. The bot only does must-do steps until it passes.`]);
   const rankT = {crit: 0, warn: 1, act: 2, good: 3};
   todo.sort((x, y) => rankT[x[0]] - rankT[y[0]]);
+
+  // today's steps, in order: the same list the bot gets
+  const SECN = {check: "Check", b2b: "B2B", machine: "Machines", rent_wh: "Warehouse space", rent_shop: "Store space", stock_store: "Store stock", stock_wh: "Warehouse stock", price: "Prices", marketing: "Marketing", release: "Give back"};
+  const ackPill = a => !a ? "" : a.status === "done" ? ' <span class="pill good">bot: done</span>' : a.status === "skip" ? ' <span class="pill">bot: skipped</span>' : a.status === "fail" ? ' <span class="pill bad">bot: failed</span>' : "";
+  const ALL = PL ? PL.all : [];
+  const doneToday = Object.entries(acks).filter(([k, a]) => k.startsWith(`d${R.day}:`) && a.status === "done" && !k.includes(":check:")).length;
+  const stepRow = s => `<tr class="${s.slot === "later" ? "later" : ""}${acks[s.id]?.status === "done" ? " done" : ""}"><td class="n">${s.seq}</td><td class="sec-c">${esc(SECN[s.section] || s.section)}</td><td><span class="sec-m">${esc(SECN[s.section] || s.section)}</span>${esc(s.action)}${s.must ? ' <span class="pill warn">must</span>' : ""}${s.slot === "later" ? ' <span class="pill">if time is left</span>' : ""}${ackPill(acks[s.id])}${s.qtyMin != null && s.qtyMax != null && s.qtyMax !== s.qtyMin ? `<span class="meta">Take ${f0(s.qtyMin)}–${f0(s.qtyMax)} (the nearest game option)${s.unitPriceMax ? `, at most ${f2(s.unitPriceMax)} each` : ""}.</span>` : ""}<span class="meta">${esc(s.why)}</span></td><td class="n">${s.budget ? fk(s.budget) + (s.perDay ? "/day" : "") : "—"}</td></tr>`;
+  const stepsCard = !PL ? "" : card("steps", "BOT", "Today's steps, in order", doneToday ? `${doneToday} done` : `${ALL.length} steps`,
+    `<p class="hint">${PL.stage === "prep" ? "Prep stage: all of this can be set up before the day starts. " : ""}Do them top to bottom: deals and space come before the stock that needs them, machines before their raw materials. About ${PL.estSecNow}s for the bot (${PL.limits.botSec}s a day${PL.stage === "prep" ? " in the prep stage" : ""}). Every number comes from this plan, and each section stays inside its budget below.${PL.rescue ? " <b>Rescue day: only must-do steps.</b>" : ""}</p>
+    <div class="tw"><table class="pt bsteps"><thead><tr><th class="n">#</th><th class="sec-h">Section</th><th>Step</th><th class="n">Budget</th></tr></thead><tbody>${ALL.map(stepRow).join("")}</tbody></table></div>
+    ${PL.next.length ? `<p class="hint">Next days (if a new plan is late): ${PL.next.map(d => `day ${d.day} cash ≥ ${fk(d.expect.cash)}${d.marks.length ? ` (${d.marks.map(x => esc(x.why)).join(", ")})` : ""}`).join(" · ")}. Re-plan on day ${PL.replanOn.length ? PL.replanOn.join(", ") : "every new day"}.</p>` : ""}
+    <div class="row"><button type="button" class="small" id="copyBot">Copy bot plan (JSON)</button><span class="hint">Plan ${esc(PL.planId)} · the bot runs ${PL.steps.length} of these${PL.ok ? "" : " · a check failed"}</span></div>`);
+
+  // section budgets
+  const spentBy = {}, seenStep = id => ALL.find(x => x.id === id) || SEEN[MODE]?.map.get(id);
+  for (const [id, a] of Object.entries(acks)) { if (!id.startsWith(`d${R.day}:`) || a.status !== "done") continue;
+    const s = a.sec === undefined ? seenStep(id) : null, k = a.sec !== undefined ? a.sec : s && !s.perDay ? s.budgetKey : null;
+    if (k) spentBy[k] = (spentBy[k] || 0) + (a.amount != null ? n(a.amount) : n(s && s.budget)); }
+  const DC = S.book && S.book.dayCap && S.book.dayCap.day === R.day ? S.book.dayCap.caps : null;
+  const capRow = (k, label, live, note = "") => { const sp = spentBy[k] || 0, cap = DC && DC[k] ? DC[k] : live; return `<tr><td>${label}${note ? `<span class="meta">${note}</span>` : ""}</td><td class="n">${fk(cap.planned)}</td><td class="n"><b>${fk(cap.cap)}</b></td><td class="n">${sp ? fk(sp) : "—"}</td><td class="n${cap.cap - sp < -0.5 ? " neg" : ""}">${fk(cap.cap - sp)}</td></tr>`; };
+  const budgetCard = card("budget", "CAP", "Budgets per section", `${fk(B.total)} of ${fk(B.spendable)}`,
+    `<p class="hint">Cash ${fk(B.net0)}${has.od ? ` + overdraft we allow ${fk(-T.hardFloor)}` : ""} − keep ${B.keepDays} days of costs ${fk(B.keep)} = <b>${fk(B.spendable)}</b> to spend today. Each cap is today's plan plus up to ${f0(n(g.priceTol))}% for price moves, only from cash the next days don't need, so spending every cap in full keeps cash above the floor.</p>
+    <div class="tw"><table class="pt"><thead><tr><th>Section</th><th class="n">Planned</th><th class="n">Cap</th><th class="n">Spent (bot)</th><th class="n">Left</th></tr></thead><tbody>
+    ${capRow("stores", "New stores (rent, staff, first day)", B.caps.stores)}${capRow("stock", "Store stock", B.caps.stock, `first days ${fk(B.caps.urgent.planned)}, the rest ${fk(B.caps.deep.planned)}`)}${has.prod ? capRow("raw", "Raw materials", B.caps.raw) + capRow("mach", "Machines", B.caps.mach) : ""}${has.b2b ? capRow("b2b", "B2B stock (vendor goods)", B.caps.b2b) : ""}
+    <tr class="tot"><td>Today</td><td class="n">${fk(B.total)}</td><td class="n">${fk(MONEY.reduce((t, [k]) => t + B.caps[k].cap, 0))}</td><td class="n">${Object.values(spentBy).some(Boolean) ? fk(Object.values(spentBy).reduce((a, b) => a + b, 0)) : "—"}</td><td></td></tr></tbody></table></div>${DC ? `<p class="hint">Planned and Cap are this morning's, before the bot's first step; Left is what's still allowed.</p>` : ""}
+    <ul class="sum-list">${has.mkt ? `<li><span>Marketing per day (room up to ${fk(B.mkt.room)})</span><b>${fk(B.mkt.perDay)}</b></li>` : ""}<li><span>Space rent change per day</span><b>${B.space.perDay >= 0 ? "+" : ""}${fk(B.space.perDay)}</b></li><li><span>Running costs per day</span><b>${fk(B.run.perDay)}</b></li></ul>`);
+
+  // cash over the next days (safety run), with when the B2B money lands
+  const rows = T.rows, CW = 640, Hh = 170, padL = 10, padR = 10;
+  const vals = rows.flatMap(r => [r.troughS, r.floor, r.closeS]), lo = Math.min(0, ...vals), hi = Math.max(1, ...vals);
+  const xs = i => padL + (rows.length > 1 ? i/(rows.length - 1) : 0.5)*(CW - padL - padR), ys = v => 10 + (hi - v)/(hi - lo || 1)*(Hh - 34);
+  const line = (f, cls) => `<polyline class="${cls}" points="${rows.map((r, i) => `${xs(i).toFixed(1)},${ys(f(r)).toFixed(1)}`).join(" ")}"/>`;
+  const b2bDots = rows.map((r, i) => r.b2bS > 0 ? `<circle class="b2b" cx="${xs(i).toFixed(1)}" cy="${ys(r.closeS).toFixed(1)}" r="3.5"><title>Day ${r.day}: B2B money ${fk(r.b2bS)}</title></circle>` : "").join("");
+  const lowI = rows.findIndex(r => r.d === T.low.d), lastI = Math.max(1, rows.length - 1), showB2B = has.b2b || rows.some(r => r.b2bS > 0);
+  const lowY = Math.min(Hh - 18, Math.max(12, ys(T.low.net) + (ys(T.low.net) > Hh - 50 ? -10 : 18))), floorY = ys(rows[0].floor) < 16 ? ys(rows[0].floor) + 14 : ys(rows[0].floor) - 5;
+  const chart = `<svg class="cashchart" viewBox="0 0 ${CW} ${Hh}" role="img" aria-label="Lowest cash each day from day ${rows[0].day} to ${rows[rows.length - 1].day}: lowest ${fk(T.low.net)} on day ${T.low.day}, floor ${fk(T.low.floor)}.">
+    ${lo < 0 ? `<line class="zero" x1="0" x2="${CW}" y1="${ys(0).toFixed(1)}" y2="${ys(0).toFixed(1)}"/>` : ""}${line(r => r.floor, "floor")}${line(r => r.troughS, "low")}${b2bDots}
+    ${lowI >= 0 ? `<circle class="lowpt" cx="${xs(lowI).toFixed(1)}" cy="${ys(T.low.net).toFixed(1)}" r="4.5"/><text class="lowt" x="${xs(lowI).toFixed(1)}" y="${lowY.toFixed(1)}" text-anchor="${lowI >= 0.7*lastI ? "end" : lowI <= 0.3*lastI ? "start" : "middle"}">lowest ${fk(T.low.net)}, day ${T.low.day}</text>` : ""}
+    <text x="${padL}" y="${floorY.toFixed(1)}">floor ${fk(rows[0].floor)}</text>
+    <text x="${padL}" y="${Hh - 4}">day ${rows[0].day}</text><text x="${CW - padR}" y="${Hh - 4}" text-anchor="end">day ${rows[rows.length - 1].day}</text></svg>`;
+  const cashCard = card("cashtl", "CSH", "Cash over the next days", `lowest ${fk(T.low.net)}`,
+    `<p class="hint">Safety run: ${pct(T.conf)} of retail sales, B2B money ${f0(n(g.stressLate))} days late, stock ${f0(n(g.costPad))}% dearer${has.od ? `, overdraft interest ${f0(n(g.odRate))}%/year` : ""}. Each day's lowest point is after that day's bills, before its sales come in.</p>
+    ${chart}<ul class="legend"><li><i class="sw ln-low"></i>Lowest cash in the day</li><li><i class="sw ln-floor"></i>Floor (overdraft we allow + days of costs)</li>${showB2B ? '<li><i class="sw ln-b2b"></i>B2B money lands</li>' : ""}</ul>
+    ${has.b2b ? `<p class="hint">B2B: deals are due ${f0(tie.due)} days after accepting and pay ${f0(dd(g.b2bPayDays))} days after delivery${S.g.b2bPayRead ? " (read from the game)" : " (your input in B2B: the game data doesn't show it yet)"}${dd(g.payOffset) ? ` + ${f0(dd(g.payOffset))} extra day${dd(g.payOffset) === 1 ? "" : "s"} before it lands` : ""}, so vendor stock bought today pays back on about day ${f0(R.day + tie.vendPay)}${tie.bill ? ` and the vendor is paid on day ${f0(R.day + tie.bill)}` : ""}. First B2B money in the safety run: ${T.firstB2B.stress ? `day ${f0(T.firstB2B.stress)}` : "none in this window"}.</p>` : ""}
+    <details class="more"><summary>Day by day</summary><div class="tw"><table class="pt"><thead><tr><th>Day</th><th class="n">Retail in</th>${showB2B ? '<th class="n">B2B in</th>' : ""}<th class="n">Bills</th><th class="n">Running</th><th class="n">Buys</th><th class="n">Lowest</th><th class="n">Floor</th><th class="n">Room</th></tr></thead><tbody>
+    ${rows.map(r => `<tr${r.d === T.low.d ? ' class="on"' : ""}><td>${f0(r.day)} <span class="meta-i">${r.phase}</span></td><td class="n">${fk(r.retailS)}</td>${showB2B ? `<td class="n">${r.b2bS ? fk(r.b2bS) : "—"}</td>` : ""}<td class="n">${r.billsS ? fk(r.billsS) : "—"}</td><td class="n">${fk(r.run)}</td><td class="n">${r.capex ? fk(r.capex) : "—"}</td><td class="n${r.troughS < 0 ? " neg" : ""}"><b>${fk(r.troughS)}</b></td><td class="n">${fk(r.floor)}</td><td class="n${r.head < -0.5 ? " neg" : ""}">${fk(r.head)}</td></tr>`).join("")}</tbody></table></div></details>`);
 
   // stores
   const storeItems = R.opened.map(x => li(`open:${x.c.name}`, `<b>Open ${esc(x.c.name)}</b>: ${f0(x.area)} m², rent ${f0(n(x.c.rent)*x.area)}/day, est. +${fk(x.profit)} by the end. Setup ${fk(x.setup)}.`));
@@ -2073,7 +2629,7 @@ function renderPlan(){
     <div class="row"><button type="button" class="primary" id="copy">Copy plan for team chat</button></div><textarea id="copyText" hidden readonly aria-label="Plan text"></textarea>`);
 
   // the same five answers for each strategy
-  const cmp = Object.keys(STRAT).map(k => k === R.sk ? R : plan(S, k));
+  const cmp = Object.keys(STRAT).map(k => k === R.sk ? R : planSafe(S, k).R);
   const cmpRows = [["Stores to open", r => f0(r.opened.length), true], ["Machines to buy", r => f0(r.newM.filter(m => m.ok).length), has.prod], ["B2B fund", r => fk(r.b2bFund), has.b2b], ["Retail stock", r => fk(r.spent.stock), true], ["Marketing / day", r => fk(r.mkTotal), has.mkt]].filter(x => x[2]);
   const cmpCard = card("compare", "FF", "Strategies side by side", "", `<div class="tw"><table class="pt cmp"><thead><tr><th><span class="sr">Answer</span></th>${cmp.map(r => `<th class="n"><button type="button" data-strat="${r.sk}" aria-pressed="${r.sk === S.strategy}">${r.st.label}</button></th>`).join("")}</tr></thead><tbody>
     ${cmpRows.map(([l, f]) => `<tr><th scope="row">${l}</th>${cmp.map(r => `<td class="n${r.sk === S.strategy ? " on" : ""}">${f(r)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
@@ -2085,7 +2641,8 @@ function renderPlan(){
     ["mach", "Machines to buy", f0(okM.length), machMix || "none pay back", okM.length > 0, has.prod],
     ["b2b", "B2B fund", fk(R.b2bFund), `${pct(b2bPct)} of investable`, R.b2bFund > 0, has.b2b],
     ["retail", "Retail stock", fk(R.spent.stock), "vendor orders today", R.spent.stock > 0, true],
-    ["mkt", "Marketing / day", fk(R.mkTotal), g.mkMode === "friend" ? "friend's rule" : "FF best", R.mkTotal > 0, has.mkt]].filter(x => x[5]);
+    ["mkt", "Marketing / day", fk(R.mkTotal), g.mkMode === "friend" ? "friend's rule" : "FF best", R.mkTotal > 0, has.mkt],
+    ["low", "Lowest cash", fk(T.low.net), `day ${f0(T.low.day)} · floor ${fk(T.low.floor)}`, T.low.head >= -0.5, true]].filter(x => x[5]);
   const summary = `${R.opened.length ? `Open <b>${R.opened.map(x => esc(x.c.name)).join(", ")}</b>. ` : ""}${okM.length ? `Buy <b>${machMix}</b> (${esc(MPRIO[g.mPrio] || "")}). ` : ""}${has.b2b ? `Forecasts say <b>${R.focus === "B2B" ? "focus B2B" : R.focus === "Retail" ? "focus retail" : "split retail and B2B"}</b>: B2B is ~${pct(R.wB2B)} of the profit potential, so it gets ${pct(b2bPct)} of the ${fk(R.investable)} investable cash${b2bCut ? ` (less than its usual ${pct(R.fundShare)}, so every store keeps its first ${R.lead + 2} days of stock)` : ""}.` : R.opened.length || okM.length ? "" : "No new stores or machines today: stock the open stores as below."}`.trim();
   const parts = [["Stores", R.spent.stores, "c1", true], ["Machines", R.spent.mach, "c2", has.prod], ["Raw materials", R.rawCost, "c3", has.prod], ["B2B fund", R.b2bFund, "c4", has.b2b], ["Retail stock", R.spent.stock, "c5", true], ["Left", Math.max(0, R.cashLeft), "c0", true]].filter(x => x[3]);
   const tot = parts.reduce((s, p) => s + Math.max(0, p[1]), 0);
@@ -2096,11 +2653,11 @@ function renderPlan(){
     <div class="kpis k${tiles.length}" style="--n:${tiles.length}">${tiles.map(([k, l, v, note, on]) => `<div class="kpi${on ? "" : " off"}" data-tile="${k}"><span class="lbl">${l}</span><b class="val">${v}</b><span class="note">${note}</span></div>`).join("")}</div>
     ${summary ? `<p class="summary">${summary}</p>` : ""}${cash}
     ${todo.length ? `<ul class="alerts">${todo.map(([c, h]) => `<li class="${c}"><svg viewBox="0 0 16 16" aria-hidden="true">${ICON[c]}</svg><div><span class="sr">${SEV[c]}: </span>${h}</div></li>`).join("")}</ul>` : ""}`;
-  const sections = storesCard + prodCard + stockCard + spaceCard + b2bCard + mktCard + costCard + priceCard + cmpCard;
+  const sections = stepsCard + budgetCard + cashCard + storesCard + prodCard + stockCard + spaceCard + b2bCard + mktCard + costCard + priceCard + cmpCard;
 
   // sticky bar, built last so it can count the ticks
   const doneN = acts.filter(isDone).length;
-  const chips = [["stores", "Stores", R.opened.length ? `+${R.opened.length}` : "—", true], ["prod", "Production", okM.length ? `+${okM.length}` : "—", has.prod],
+  const chips = [["steps", "Steps", PL ? `${PL.steps.length}` : "", !!PL], ["budget", "Budgets", fk(B.total), true], ["cashtl", "Cash days", fk(T.low.net), true], ["stores", "Stores", R.opened.length ? `+${R.opened.length}` : "—", true], ["prod", "Production", okM.length ? `+${okM.length}` : "—", has.prod],
     ["stock", "Stock", fk(R.spent.stock), true], ["space", "Space", `${f0(needM2)} m²`, true], ["b2b", "B2B", fk(R.b2bFund), has.b2b], ["mkt", "Marketing", fk(R.mkTotal), has.mkt], ["cost", "Cost", `${fk(goodsDay + runDay)}/day`, true], ["price", "Prices", "", true], ["compare", "Strategies", "", true]].filter(x => x[3]);
   const bar = `<div class="plan-bar"><div class="pb-row">
       <div class="pb-day"><h2>Plan · day ${f0(R.day)} of ${f0(R.maxDay)}</h2><p><span>${R.left} days left</span><span class="pill">${R.phase}</span>${R.emerg ? '<span class="pill bad">Emergency</span>' : ""}</p></div>
@@ -2122,6 +2679,8 @@ function renderPlan(){
 
   const strip = h => h.replace(/<[^>]+>/g, "").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
   lastText = [`FF MODE ${MODE} · DAY ${R.day}/${R.maxDay} · ${R.phase} · ${st.label}${R.emerg ? " · EMERGENCY" : ""} · cash ${fk(n(g.cash))}, keep ${fk(R.reserve)}, spend ${fk(R.spend0)}`,
+    `LOWEST CASH: ${fk(T.low.net)} on day ${T.low.day} (floor ${fk(T.low.floor)})${has.b2b ? `; B2B money ${tie.pay} days after delivery${S.g.b2bPayRead ? "" : " (input)"}, vendor-stock deals pay back ~day ${R.day + tie.vendPay}` : ""}${XS.mode === "mustOnly" ? " · RESCUE: must-do steps only" : ""}`,
+    "BUDGETS: " + [["stores", "stores"], ["stock", "stock"], ["raw", "raw"], ["mach", "machines"], ["b2b", "B2B stock"]].filter(([k]) => B.caps[k].planned > 0).map(([k, l]) => `${l} ${fk(B.caps[k].planned)} (cap ${fk(B.caps[k].cap)})`).join(", ") + ` = ${fk(B.total)} of ${fk(B.spendable)}`,
     "ANSWER: " + [`open ${R.opened.length} store(s)`, has.prod ? `buy ${okM.length} machine(s)${machMix ? ` (${strip(machMix)})` : ""}` : "", has.b2b ? `B2B fund ${fk(R.b2bFund)}` : "", `retail stock ${fk(R.spent.stock)}`, has.mkt ? `marketing ${fk(R.mkTotal)}/day` : ""].filter(Boolean).join(", "),
     ...todo.map(([, h]) => "! " + strip(h)),
     ...R.opened.map(x => `OPEN ${x.c.name} (${f0(x.area)} m²)`),
@@ -2137,7 +2696,8 @@ function renderPlan(){
     `COST/day after production: goods ${fk(goodsDay)} + running ${fk(runDay)} = ${fk(goodsDay + runDay)}` + (has.prod ? "; final made cost/unit: " + R.goods.filter(x => x.finalMade != null).map(x => `${P[x.j].name} ${f2(x.finalMade)}`).join(", ") : ""),
     ...(has.b2b ? [`B2B FUND: ${fk(R.b2bFund)} (${pct(b2bPct)} of investable, focus ${R.focus})`] : []),
     ...(has.mkt ? [`MARKETING/day: ` + (R.mkStores.map(x => `${x.c.name} ${f0(x.budget)}` + (has.media && x.budget > 0 ? ` (A ${f0(x.media["Media A"])} / B ${f0(x.media["Media B"])} / C ${f0(x.media["Media C"])})` : "")).join(", ") || "none")] : []),
-    "PRICES: " + R.prices.map(x => `${x.p.name} ${f2(x.rec)}${has.b2b ? ` (B2B ≥ ${f2(x.b2b)})` : ""}`).join(", ")].join("\n");
+    "PRICES: " + R.prices.map(x => `${x.p.name} ${f2(x.rec)}${has.b2b ? ` (B2B ≥ ${f2(x.b2b)})` : ""}`).join(", "),
+    ...(PL ? [`STEPS (${PL.all.length}, ~${PL.estSecNow}s):`, ...PL.all.map(s => `  ${s.seq}. ${s.action}${s.slot === "later" ? " [if time is left]" : ""}`)] : [])].join("\n");
 
   clearTimeout(annT);
   annT = setTimeout(() => { $("announce").textContent = `Plan updated: open ${R.opened.length} stores, buy ${okM.length} machines, B2B fund ${fk(R.b2bFund)}, retail stock ${fk(R.spent.stock)}.`; }, 900);
@@ -2157,8 +2717,21 @@ function renderTop(){
     : game ? `Filled from your game (day <b>${f0(n(S.g.day))}</b>${t ? `, ${t}` : ""}). ${n(S.liveAt) ? "The live link is quiet: is the game tab still open?" : "Paste again any time to refresh."}` : `Not filled yet: using the <b>${S.preset === "juice" ? "Juice · Korea" : "Coffee · Germany"}</b> preset numbers.`;
   document.querySelectorAll("[data-preset]").forEach(b => b.setAttribute("aria-current", S.preset === b.dataset.preset ? "true" : "false"));
 }
-function refresh(){ R = plan(S, S.strategy); renderTop(); renderPlan(); updateCounts(); }
-function renderAll(){ R = plan(S, S.strategy); renderTop(); renderInputs(); renderPlan(); }
+let XS = null, PLAN = null;
+const PLANS = {}, SEEN = {};
+function remember(m, P){   // every step of today's plans, so a step report still finds its step after the plan moved on
+  if (!P) return;
+  const M = SEEN[m] = SEEN[m] && SEEN[m].day === P.day ? SEEN[m] : {day: P.day, map: new Map()};
+  for (const s of P.all || []) M.map.set(s.id, s);   // the calculator's own step (the bot's has the same id)
+}
+function planNow(){
+  try { XS = planSafe(S, S.strategy); R = XS.R; } catch (e) { PLAN = PLANS[MODE] = null; throw e; }
+  try { PLAN = toPlan(S, XS, MODE); } catch (e) { PLAN = null; console.warn("FF plan", e); }
+  PLANS[MODE] = PLAN; remember(MODE, PLAN);
+}
+function planFail(e){ console.warn("FF plan", e); const el = $("plan"); if (el) el.innerHTML = `<section class="blk sep"><p class="hint"><b>The plan can't be worked out from these numbers</b> (${esc(e && e.message || e)}). Check the last number you changed in the inputs.</p></section>`; }
+function refresh(){ try { planNow(); renderTop(); renderPlan(); } catch (e) { planFail(e); } try { updateCounts(); } catch (e) {} sendPlan(MODE); }
+function renderAll(){ let err = null; try { planNow(); renderTop(); } catch (e) { err = e; } renderInputs(); try { if (err) throw err; renderPlan(); } catch (e) { planFail(e); } sendPlan(MODE); }
 let rq = 0;
 const schedule = () => { if (rq) return; rq = requestAnimationFrame(() => { rq = 0; refresh(); }); };
 
@@ -2386,7 +2959,7 @@ async function initShare(){
 
 /* ---------- live: a game tab opened from here (Go live) sends each change at once; only the fields that changed go to the team.
    Each mode has its own game tab and link; data always lands in the mode its reader was copied for. ---------- */
-const LV = Object.fromEntries(MODES.map(m => [m, {win: null, url: "", state: "off", at: 0, day: 0, err: "", copied: false, openedAt: 0, toastDay: 0}]));
+const LV = Object.fromEntries(MODES.map(m => [m, {win: null, origin: "", url: "", state: "off", at: 0, day: 0, err: "", copied: false, openedAt: 0, toastDay: 0, bot: null}]));
 for (const m of MODES) try { LV[m].url = (JSON.parse(localStorage.getItem(SK(m) + "-game")) || {}).url || ""; } catch (e) {}
 const originOf = u => { try { return new URL(u).origin; } catch (e) { return ""; } };
 /* web copy: the newest reader sits on this site (../reader.js, the same file the FF live bookmark loads); the reader built into
@@ -2419,6 +2992,7 @@ function renderLive(){
     : L.state === "blocked" ? "The new tab was blocked. Allow pop-ups for this page and try again, or use the steps below."
     : L.state === "closed" ? "The game tab was closed. Click <b>Go live</b> to open it again."
     : L.url ? "" : "Paste your game's address once (or paste game data into the Game data box: the address is remembered).")
+    + (L.bot && L.state === "linked" ? ` <span class="hint">${L.bot.on ? `Bot linked: it has today's plan${PLANS[MODE] ? ` (${PLANS[MODE].steps.length} steps)` : ""}.` : L.bot.stop ? `Bot stopped at ${clock(L.bot.at)}${L.bot.reason ? `: ${esc(L.bot.reason)}` : ""}.` : `Bot: day ${f0(L.bot.day)} done at ${clock(L.bot.at)}, ${L.bot.done} steps done, ${L.bot.skip} skipped, ${L.bot.fail} failed.`}</span>` : "")
     + other.map(k => ` <span class="hint">Mode ${k} is live too${LV[k].day ? ` (day ${f0(LV[k].day)})` : ""}.</span>`).join("");
   const h = $("importHint"); if (h) h.textContent = L.state === "linked" ? `Live ✓ · Mode ${MODE}` : `Live, or ${NOCONSOLE ? 2 : 3} steps by hand`;
 }
@@ -2482,23 +3056,98 @@ async function fillElsewhere(m, D){
   if (!N) return false;
   N.pastedAt = N.liveAt = Date.now();
   if (Sec.lock) sealLocal(m, N); else try { localStorage.setItem(SK(m), JSON.stringify(N)); } catch (e) {}
+  try { PLANS[m] = toPlan(N, planSafe(N, N.strategy), m); remember(m, PLANS[m]); sendPlan(m); } catch (e) {}
   if (Sync.db && Sync.writable && !locked()) try { await Sync.db.doc(docsOf(m)[0]).set(Sec.lock ? {v: 6, sec: 1, salt: Sec.salt, by: Sync.me, at: Date.now(), state: await sealTree(enc(N), teamKey())} : {v: 6, by: Sync.me, at: Date.now(), state: enc(N)}); } catch (e) {}
   const L = LV[m]; L.state = "linked"; L.at = Date.now(); L.day = n(N.g.day); L.lag = !!D.lag; if (D.url) learnGame(D.url, m);
   renderLive();
   return true;
 }
+/* ---------- the bot in the game tab: it gets today's plan ({ff:"plan"}) after every update, and reports each step back ---------- */
+const SENT = {};
+function sendPlan(m, force = false){   // at most one send per burst; the same plan again only every 5 s (or when asked)
+  const q = SENT[m] = SENT[m] || {t: 0, id: "", at: 0, force: false};
+  q.force = q.force || force;
+  if (q.t) return;
+  q.t = setTimeout(() => {
+    q.t = 0; const L = LV[m], P = PLANS[m], to = L && (L.origin || originOf(L.url));
+    if (!L || !L.win || L.win.closed || !P || P.source !== "game" || !to || locked()) { q.force = false; return; }   // only a plan made from the game's numbers, only to the game's own address
+    if (!q.force && P.planId === q.id && Date.now() - q.at < 5000) return;
+    q.force = false; q.id = P.planId; q.at = Date.now();
+    const {all, ...msg} = P;   // the bot gets its own steps; the calculator's full list stays here
+    try { L.win.postMessage({...msg, ff: "plan", app: "ffcalc", mode: m}, to); } catch (err) {}
+  }, 120);
+}
+async function planElsewhere(m){ const st = await loadStateAsync(m); PLANS[m] = toPlan(st, planSafe(st, st.strategy), m); remember(m, PLANS[m]); return PLANS[m]; }
+const QUEUE = {};
+function update(m, fn){   // change one mode's numbers: on screen right away, the other mode through its saved copy (one change at a time)
+  if (m === MODE) { const prev = JSON.parse(JSON.stringify(S)); fn(S); saveLocal(); shareDiff(prev, S); schedule(); return; }
+  QUEUE[m] = (QUEUE[m] || Promise.resolve()).then(async () => {
+    const st = await loadStateAsync(m); fn(st);
+    if (Sec.lock) sealLocal(m, st); else try { localStorage.setItem(SK(m), JSON.stringify(st)); } catch (e) {}
+    PLANS[m] = toPlan(st, planSafe(st, st.strategy), m); remember(m, PLANS[m]); sendPlan(m);
+  }).catch(() => {});
+}
+// the plan rows a step belongs to, so the bot's work ticks them here too
+const TICK_OF = st => { const T = st.target || {};
+  return {vendorPO: `vendor:${T.city}`, setMarketing: `mkt:${T.city}`, setPrice: `price:${T.product}`, rentStore: `open:${T.city}`, rawPO: "raw", b2bPO: "b2b",
+    rentSpace: T.place === "warehouse" ? "space:warehouse" : `space:${T.city}`, releaseSpace: T.place === "warehouse" ? "space:warehouse" : `space:${T.city}`}[st.op]
+    || (st.op === "setMachine" && /^(switch|idle|pause):/.test(st.tick) ? st.tick : ""); };
+function bookStep(m, msg){
+  const id = String(msg.id || ""), M = SEEN[m], st = M && M.map.get(id);
+  if (!st || !/^d\d+:/.test(id)) return;   // not a step of today's plan
+  if (msg.practice) return;   // a practice run sends nothing to the game, so nothing is booked
+  const status = ["done", "skip", "fail"].includes(msg.status) ? msg.status : "done";
+  const num = v => v == null || v === "" || !isFinite(+v) ? null : +v;
+  update(m, x => {
+    const B = x.book = bookOf(x.book, null, Math.max(1, n(x.g.day))), day = Math.max(1, n(x.g.day)), was = B.acks[id];
+    const q = num(msg.qty) ?? n(st.qty), each = num(msg.price) ?? n(st.unitPrice), amt = num(msg.amount) ?? (q*each || n(st.budget));
+    if (status === "done" && !(B.dayCap && B.dayCap.day === day)) { const pc = PLANS[m] && PLANS[m].day === day && PLANS[m].caps;
+      if (pc) B.dayCap = {day, caps: Object.fromEntries(MONEY.map(([k]) => k).concat("stock").filter(k => pc[k]).map(k => [k, {cap: n(pc[k].cap), planned: n(pc[k].planned)}]))}; }
+    B.acks[id] = {status, qty: num(msg.qty), price: num(msg.price), amount: status === "done" && st.budget ? amt : null, sec: st.budgetKey && !st.perDay ? st.budgetKey : null, at: Date.now(), plan: String(msg.planId || "").slice(0, 80), note: String(msg.note || "").slice(0, 160)};
+    if (status !== "done" || (was && was.status === "done")) return;   // a report sent twice is booked once
+    const T = st.target || {}, bill = () => { if (n(st.billDay) > day && amt > 0) B.bills.push({dueDay: n(st.billDay), amount: amt, from: id}); };
+    if (st.op === "vendorPO") { B.inbound.push({dest: "store", city: T.city, item: T.product, qty: q, arriveDay: n(st.arriveDay), from: id}); bill(); }
+    else if (st.op === "rawPO") { B.inbound.push({dest: "wh", city: "", item: T.item, qty: q, arriveDay: n(st.arriveDay), from: id}); bill(); }
+    else if (st.op === "b2bPO") { B.inbound.push({dest: "wh", city: "", item: T.product, qty: q, arriveDay: n(st.arriveDay), from: id}); bill(); }
+    else if (st.op === "b2bAccept" || (st.op === "b2bBid" && msg.won)) {
+      B.orders.push({id: String(msg.orderId || id).slice(0, 80), product: T.product, qty: q, each, due: num(msg.due) ?? day + n(x.g.b2bDueDays), deliverDay: null, payDay: null, status: "open"});
+      B.wins = n(B.wins) + 1; }
+    else if (st.op === "b2bDeliver") { const o = B.orders.find(o => o.id === T.order); if (o) { o.deliverDay = day; o.status = "delivered"; o.payDay = day + dd(x.g.b2bPayDays) + dd(x.g.payOffset); } }
+    else if (st.op === "setMarketing") B.mkSet[`${T.city}|${st.agency || ""}`] = q;
+  });
+  // tick the plan row once every step behind it is done
+  const tk = status === "done" && m === MODE && TICK_OF(st);
+  if (tk) { const acks = S.book.acks, all = [...M.map.values()].filter(s => TICK_OF(s) === tk); if (all.every(s => (acks[s.id] || {}).status === "done")) setDone(tk, true); }
+}
+function onBot(m, msg){
+  const L = LV[m];
+  if (msg.ff === "botHello" || msg.ff === "getPlan") {
+    L.bot = {...(L.bot || {}), on: true, at: Date.now()};
+    (PLANS[m] || m === MODE ? Promise.resolve() : planElsewhere(m)).then(() => sendPlan(m, true)).catch(() => {});
+    renderLive(); return;
+  }
+  if (msg.ff === "step") { bookStep(m, msg); return; }
+  if (msg.ff === "runEnd" || msg.ff === "abort") {
+    const b = L.bot = {on: false, at: Date.now(), day: n(msg.day) || L.day, done: n(msg.done), skip: n(msg.skip), fail: n(msg.fail), sec: n(msg.sec), stop: msg.ff === "abort", reason: String(msg.reason || "").slice(0, 160)};
+    toast(b.stop ? `The bot stopped${b.reason ? ": " + b.reason : ""}.` : `Bot finished day ${f0(b.day)}: ${b.done} done, ${b.skip} skipped, ${b.fail} failed${b.sec ? ` in ${b.sec.toFixed(1)} s` : ""}.`);
+    renderLive();
+  }
+}
+const BOTMSG = new Set(["botHello", "getPlan", "step", "runEnd", "abort"]);
 window.addEventListener("message", e => {
-  const msg = e.data; if (!msg || typeof msg !== "object" || (msg.ff !== "hello" && msg.ff !== "data")) return;
+  const msg = e.data; if (!msg || typeof msg !== "object" || (msg.ff !== "hello" && msg.ff !== "data" && !BOTMSG.has(msg.ff))) return;
   if (locked()) return;   // a locked device takes no game data
   const tagOf = x => MODES.includes(x) ? x : OLDMODE[x] || "", tag = tagOf(msg.mode) || tagOf(msg.data?.mode);
   // only a game tab this page opened, or (after this page reloads) a tab on that mode's game address
-  const m = MODES.find(k => LV[k].win && e.source === LV[k].win) || MODES.find(k => originOf(LV[k].url) && e.origin === originOf(LV[k].url) && (!tag || tag === k));
+  const m = MODES.find(k => LV[k].win && e.source === LV[k].win) || MODES.find(k => originOf(LV[k].url) && e.origin === originOf(LV[k].url) && (!tag || tag === k))
+    || (window.opener && e.source === window.opener ? tag || MODE : "");   // opened by the bot's Start button in the game tab
   if (!m) return;
-  LV[m].win = e.source;
+  LV[m].win = e.source; if (e.origin && e.origin !== "null") LV[m].origin = e.origin;
   const reply = x => { try { e.source.postMessage(x, e.origin && e.origin !== "null" ? e.origin : "*"); } catch (err) {} };
-  if (msg.ff === "hello") { LV[m].state = "linked"; LV[m].err = ""; LV[m].toastDay = 0; renderLive(); reply({ff: "ack", app: "ffcalc", mode: m}); return; }
+  if (BOTMSG.has(msg.ff)) { onBot(m, msg); return; }
+  if (msg.ff === "hello") { LV[m].state = "linked"; LV[m].err = ""; LV[m].toastDay = 0; renderLive(); reply({ff: "ack", app: "ffcalc", mode: m, planId: PLANS[m]?.planId || null}); sendPlan(m, true); return; }
   const to = tag || m;
-  if (to === MODE) reply({ff: "ack", app: "ffcalc", mode: to, ok: liveApply(msg.data)});
+  if (to === MODE) reply({ff: "ack", app: "ffcalc", mode: to, ok: liveApply(msg.data), planId: PLAN?.planId || null});
   else { reply({ff: "ack", app: "ffcalc", mode: to, ok: true}); applyElsewhere(to, msg.data); }
 });
 setInterval(() => {
@@ -2673,6 +3322,7 @@ document.addEventListener("click", async e => {
     renderLive(); return;
   }
   if (b.id === "copyTop" || b.id === "copy") copyText(lastText);
+  if (b.id === "copyBot" && PLAN) { const {all, ...msg} = PLAN; copyText(JSON.stringify({...msg, ff: "plan", app: "ffcalc"}, null, 1)); }
 });
 
 $("importBox").open = S.preset !== "game";
