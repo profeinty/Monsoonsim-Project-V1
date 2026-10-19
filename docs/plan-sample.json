@@ -1,0 +1,373 @@
+{
+ "ff": "plan",
+ "app": "ffcalc",
+ "ffplan": 1,
+ "v": 1,
+ "planId": "12i-d2-balanced-9ab9af46",
+ "mode": "12i",
+ "source": "game",
+ "stage": "day",
+ "strategy": "balanced",
+ "day": 2,
+ "maxDay": 80,
+ "phase": "Land grab",
+ "madeAt": 1792368386969,
+ "dataAt": 0,
+ "validUntilDay": 4,
+ "ok": true,
+ "rescue": false,
+ "warnings": [
+  "B2B pay wait is 5 days from the calculator's inputs (not read from the game)."
+ ],
+ "inputs": {
+  "lead": 1,
+  "payTerms": 5,
+  "b2bPayDays": 5,
+  "b2bDueDays": 3,
+  "lot": 500,
+  "storeStep": 50,
+  "whStep": 500,
+  "H": 14
+ },
+ "cash": {
+  "cash": 900000,
+  "odUsed": 0,
+  "net0": 900000,
+  "hardFloor": -2000000,
+  "keepDays": 5,
+  "keep": 904000,
+  "spendable": 1996000,
+  "low": {
+   "day": 13,
+   "cash": -231165,
+   "floor": -1096000,
+   "room": 864835
+  }
+ },
+ "reserve": -1096000,
+ "b2bPayWait": 6,
+ "b2bMoneyBackDays": {
+  "vendor": 9,
+  "made": 9
+ },
+ "b2bBidFloor": {
+  "Americano": 6.06,
+  "Hot Chocolate": 8.12,
+  "Bubble Milk Tea": 11.41
+ },
+ "floors": {
+  "Americano": 6.06,
+  "Hot Chocolate": 8.12,
+  "Bubble Milk Tea": 11.41
+ },
+ "verify": {
+  "day": 2,
+  "cash": 900000,
+  "tol": 20000,
+  "cashMin": 880000
+ },
+ "b2b": {
+  "rules": {
+   "onePerProductPerDay": true,
+   "fixedOnly": true,
+   "bidCut": 0.03
+  },
+  "products": [
+   {
+    "name": "Americano",
+    "floorEach": 6.06,
+    "cashCost": 5.2,
+    "capQty": 31000,
+    "free": 0,
+    "madePerDay": 15600,
+    "fundUnits": 0,
+    "lastAcceptDay": 77
+   }
+  ]
+ },
+ "budgets": {
+  "b2b": 0,
+  "rent_shop": 0,
+  "rent_wh": 0,
+  "machine": 0,
+  "buy_raw": 634746,
+  "buy_store": 503880,
+  "buy_wh_goods": 0,
+  "marketing": 82000,
+  "price": 0
+ },
+ "caps": {
+  "stores": {
+   "cap": 0,
+   "planned": 0,
+   "left": 0
+  },
+  "urgent": {
+   "cap": 403920,
+   "planned": 396000,
+   "left": 7920
+  },
+  "deep": {
+   "cap": 99960,
+   "planned": 98000,
+   "left": 1960
+  },
+  "raw": {
+   "cap": 634746,
+   "planned": 622300,
+   "left": 12446
+  },
+  "mach": {
+   "cap": 0,
+   "planned": 0,
+   "left": 0
+  },
+  "b2b": {
+   "cap": 0,
+   "planned": 0,
+   "left": 0
+  },
+  "stock": {
+   "cap": 503880,
+   "planned": 494000,
+   "left": 9880
+  },
+  "mkt": {
+   "perDay": 82000,
+   "roomPerDay": 132800
+  },
+  "space": {
+   "perDay": 0
+  },
+  "run": {
+   "perDay": 98800
+  }
+ },
+ "bySection": {
+  "stock_store": 494000,
+  "stock_wh": 622300,
+  "marketing": 82000
+ },
+ "cutoffs": {
+  "lastVendorPO": 78,
+  "lastRawPO": 77,
+  "lastB2BAcceptVendor": 77,
+  "lastB2BAcceptStock": 77
+ },
+ "steps": [
+  {
+   "id": "d2:vendor:Berlin:Americano",
+   "seq": 3,
+   "slot": "now",
+   "section": "buy_store",
+   "action": "buy",
+   "target": "Berlin",
+   "qty": 8500,
+   "cost": 85000,
+   "budget": 85000,
+   "must": true,
+   "deps": [],
+   "text": "Buy 8,500 Americano for Berlin (arrives day 3, pay by day 9). At least 7,500.",
+   "why": "Forecast 2,640/day; the store has 800 (0.3 days). Stock target 3.5 days.",
+   "estSec": 1,
+   "product": "Americano",
+   "qtyMin": 7500,
+   "qtyMax": 9000,
+   "unitPrice": 10,
+   "unitPriceMax": 10.2,
+   "arriveDay": 3,
+   "billDay": 9,
+   "m2Each": 0.005
+  },
+  {
+   "id": "d2:raw:Plastic Cup",
+   "seq": 19,
+   "slot": "now",
+   "section": "buy_raw",
+   "action": "buy",
+   "target": "Berlin Warehouse",
+   "qty": 86500,
+   "cost": 86500,
+   "budget": 86500,
+   "must": true,
+   "deps": [],
+   "text": "Order 86,500 Plastic Cup to the warehouse (2 days of production, arrives day 3).",
+   "why": "Machines use 43,150/day; the warehouse keeps no standing stock.",
+   "estSec": 1,
+   "product": "Plastic Cup",
+   "qtyMin": 86500,
+   "qtyMax": 87000,
+   "unitPrice": 1,
+   "arriveDay": 3,
+   "billDay": 9
+  },
+  {
+   "id": "d2:mkt:Berlin:MA",
+   "seq": 24,
+   "slot": "now",
+   "section": "marketing",
+   "action": "set",
+   "target": "Berlin",
+   "qty": 23100,
+   "cost": 23100,
+   "budget": 23100,
+   "must": false,
+   "deps": [],
+   "text": "Marketing for Berlin: 23,100/day with MA.",
+   "why": "FF best: 23,100/day for the store, weighted by its profit.",
+   "estSec": 1,
+   "price": 23100,
+   "agency": "MA"
+  },
+  {
+   "id": "d2:b2b:accept:Americano",
+   "seq": 2,
+   "slot": "now",
+   "section": "b2b",
+   "action": "accept",
+   "target": "1042",
+   "qty": 20000,
+   "cost": 0,
+   "budget": 0,
+   "must": false,
+   "deps": [],
+   "text": "Accept B2B offer 1042: 20,000 Americano at 9.50 each, due day 5.",
+   "why": "Pays 9.50 against a floor of 6.06; we can deliver 31,000 by the due day. One deal per product a day.",
+   "estSec": 0.5,
+   "product": "Americano",
+   "price": 9.5,
+   "floor": 6.06,
+   "qtyMax": 31000
+  },
+  {
+   "id": "d2:b2b:bid:1043",
+   "seq": 33,
+   "slot": "later",
+   "section": "b2b",
+   "action": "bid",
+   "target": "1043",
+   "qty": 15000,
+   "cost": 0,
+   "budget": 0,
+   "must": false,
+   "deps": [],
+   "text": "Bid 11.64 on B2B offer 1043 (15,000 Hot Chocolate, max 12.00).",
+   "why": "3% under the max bid, never under the floor 8.12; only what we can deliver.",
+   "estSec": 0.7,
+   "product": "Hot Chocolate",
+   "price": 11.64,
+   "floor": 8.12
+  }
+ ],
+ "estSecNow": 29.1,
+ "limits": {
+  "botSec": 30,
+  "txSec": 1,
+  "safeTargetPct": 90,
+  "errorBudgetPct": 10,
+  "priceTolPct": 2,
+  "maxMachines": 7,
+  "maxPlanAgeSec": 90
+ },
+ "next": [
+  {
+   "day": 3,
+   "phase": "Land grab",
+   "expect": {
+    "cash": 538400,
+    "floor": -1096000,
+    "room": 1634400
+   },
+   "validIf": {
+    "cashMin": 620400,
+    "delinqMax": 0
+   },
+   "steps": [
+    {
+     "op": "vendorPO",
+     "rule": "orderUpTo",
+     "target": {
+      "city": "Berlin",
+      "store": "Berlin Retail"
+     },
+     "lines": [
+      {
+       "product": "Americano",
+       "target": 9240,
+       "lot": 500,
+       "qtyMax": 203000,
+       "unitPriceMax": 10.2
+      }
+     ]
+    }
+   ],
+   "marks": []
+  }
+ ],
+ "replanOn": [
+  6,
+  9,
+  13
+ ],
+ "checks": [
+  {
+   "id": "finite",
+   "ok": true,
+   "msg": "every quantity, price and budget is a real number"
+  },
+  {
+   "id": "capsSum",
+   "ok": true,
+   "msg": "section budgets 1.14M fit the 2.00M to spend"
+  },
+  {
+   "id": "sectionSum",
+   "ok": true,
+   "msg": "each section's steps add up to its budget and stay under its cap"
+  },
+  {
+   "id": "lowPoint",
+   "ok": true,
+   "msg": "lowest cash -231k on day 13 stays above the floor -1.10M"
+  },
+  {
+   "id": "rounding",
+   "ok": true,
+   "msg": "orders in lots of 500, store space in 50 m², warehouse in 500 m², marketing in 100s"
+  },
+  {
+   "id": "limits",
+   "ok": true,
+   "msg": "at most 7 machines; no orders that would land after the last day"
+  },
+  {
+   "id": "time",
+   "ok": true,
+   "msg": "~29.1s of steps for 30s"
+  }
+ ],
+ "timeline": [
+  {
+   "day": 2,
+   "retail": 0,
+   "b2b": 0,
+   "bills": 0,
+   "run": 180800,
+   "buys": 0,
+   "cash": 719200,
+   "floor": -1096000,
+   "room": 1815200
+  },
+  {
+   "day": 3,
+   "retail": 383716,
+   "b2b": 0,
+   "bills": 0,
+   "run": 180800,
+   "buys": 0,
+   "cash": 538400,
+   "floor": -1096000,
+   "room": 1634400
+  }
+ ]
+}
