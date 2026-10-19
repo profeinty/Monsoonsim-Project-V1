@@ -26,17 +26,24 @@ It sets `window.__FF_MODE` to the calculator mode, then adds a `<script>` tag fo
 
 The Auto tab checks B2B > B2B Offers and shows which open deals it would grab. Smart mode: enough stock in the warehouses and price at least cost x margin (default 1.15); bids go in 3% under the max price. Grab all mode skips those checks. One deal per product per day (the game's limit). The Auto tab only previews; the Bot tab accepts and bids on the deals the calculator's plan picks.
 
-## Bot (reader v8)
+## Bot (reader v9)
 
 The Bot tab follows the calculator's plan: every quantity, price and budget comes from the calculator, nothing is a fixed number in the bot.
 
 1. Open the game and click your FF live bookmark, then open the **Bot** tab.
 2. **Check the screens** reads every screen the bot uses and sends nothing. **Practice** does everything except send, so you can see what it would do.
-3. **Start** opens the web calculator in a new tab (if it isn't linked yet), takes its plan for the day and runs it in order: B2B deals, shop space, warehouse space, raw materials, store stock, marketing. Each section stays within its budget and cash stays above the plan's reserve. It reports each step back to the calculator and takes the next day's plan when the day changes.
-4. Stop it with its own button, the Stop bar or Esc.
-5. To skip the clicking: install `ff-live.user.js` with Tampermonkey and tick **Run by itself** in the Bot tab once. Then opening the game is enough: the bot starts, opens the calculator (allow pop-ups for the game site once) and plays each day.
+3. **Start** opens the web calculator in a new tab (if it isn't linked yet), takes its plan for the day and runs it in order: B2B deals and bids, machines, warehouse space, shop space, store stock, raw materials, stock for B2B, Web Market, marketing. Each section stays within its budget and cash stays above the plan's reserve. It reports each step back to the calculator and takes the next day's plan when the day changes.
+4. After the plan's steps it ships won B2B orders (and Web Market orders) from the warehouse stock, earliest due first, so they aren't late.
+5. Stop it with its own button, the Stop bar or Esc.
+6. To skip the clicking: install `ff-live.user.js` with Tampermonkey and tick **Run by itself** in the Bot tab once. Then opening the game is enough: the bot starts, opens the calculator (allow pop-ups for the game site once) and plays each day.
 
-Safety: it never opens a cancel-rental link, never shrinks a shop or warehouse unless the plan says release (and leaves giving up a whole location to you), checks a B2B offer's number before accepting or bidding, and counts an order whose answer got lost as bought so it is never sent twice. Machines and prices aren't done by the bot yet: do those in the game.
+What it reads for the calculator each day: every B2B bid we took part in with every team's price and who won (from B2B Sales Orders), our orders still to ship, units produced per product and day, each machine's status (making, short of a raw material, idle), the machines for sale, and the Web Market listings.
+
+Machines: it buys as many as the plan asks, one at a time, only while they fit on the warehouse floor and in the machine budget, and sets the production order. Choosing what one machine makes isn't mapped yet: do that in the game.
+
+Web Market: it buys a listing only if its number, product, amount and price match the plan (never over the plan's price), and posts our own sell listing at the shop price.
+
+Safety: it never changes a selling price (the reader refuses the game's price commands), never opens a cancel-rental link, never shrinks a shop or warehouse unless the plan says release (and leaves giving up a whole location to you), checks a B2B offer's number before accepting or bidding, and counts an order whose answer got lost as bought so it is never sent twice.
 
 ## 📄 License
 MIT © Profeinty
