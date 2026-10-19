@@ -29,10 +29,10 @@ const b = await chromium.launch(process.env.CHROMIUM ? {executablePath: process.
 const sh = s => `document.getElementById('ff-live').shadowRoot.querySelector('${s}')`;
 let fails = 0;
 const check = (name, ok, extra = "") => { console.log(`${ok ? "PASS" : "FAIL"} ${name}${extra ? " :: " + extra : ""}`); if (!ok) fails++; };
-const open = async (fail = "") => {
+const open = async (fail = "", mem = MEM) => {
   await (await fetch(BASE + "/reset?fail=" + fail)).text();
   const ctx = await b.newContext({viewport: {width: 1200, height: 900}});
-  await ctx.addInitScript(m => { try { localStorage.setItem("ff-reader:" + location.host + ":12i", m); } catch (e) {} }, JSON.stringify(MEM));
+  await ctx.addInitScript(m => { try { localStorage.setItem("ff-reader:" + location.host + ":12i", m); } catch (e) {} }, JSON.stringify(mem));
   const p = await ctx.newPage(), errs = [], logs = [];
   p.on("pageerror", e => errs.push(e.message)); p.on("console", m => logs.push(m.text()));
   await p.goto(BASE + "/game.html");
@@ -226,6 +226,17 @@ const pane = p => p.evaluate(new Function(`return ${sh('[data-f="bot"]')}.innerT
   check("M nothing sent again", n2 === n1, `${n1} then ${n2}`);
   check("M steps known as done", S.every(s => s.why === "done earlier today"), S.map(s => s.why).join(" | "));
   check("M no page errors", !errs.length, errs.join("; "));
+  await ctx.close();
+}
+{ // N: Run by itself: nothing clicked, the bot starts after the first read, opens the calculator and runs its plan
+  const {ctx, p, errs} = await open("", {...MEM, auto: true});
+  let calc = null; for (let t = 0; t < 60 && !calc; t++) { calc = ctx.pages().find(x => x.url().endsWith("/calc/")); if (!calc) await p.waitForTimeout(250); }
+  await runDone(p);
+  const L = await server(), on = await p.evaluate(() => window.__ff.bot.on), box = await p.evaluate(new Function(`return ${sh('[data-f="botauto"]')}.checked`));
+  check("N started by itself and opened the calculator", !!calc && on);
+  check("N plan ran", L.S.mkt.MA[17] === 2500 && L.S.stock[13].P3 === 3000, JSON.stringify({mkt: L.S.mkt.MA, st: L.S.stock[13]}));
+  check("N switch shows on", box);
+  check("N no page errors", !errs.length, errs.join("; "));
   await ctx.close();
 }
 await b.close();

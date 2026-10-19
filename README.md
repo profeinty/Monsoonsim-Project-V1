@@ -4,6 +4,7 @@ Hosts the FF MonsoonSIM game reader so the **FF live** bookmark can load the new
 
 - `reader.js` is the reader (v8). It opens a draggable FF panel on the game tab with Live, Today, Stores, Stock, Checks, Auto and Bot tabs; Alt+F hides it. Auto-click (allowed by the Rexar XIV organizers) presses buttons you pick, in order, on a timer. It is off each time the panel opens, stops with Esc or the Stop bar, skips a button whose words changed, and never types into fields. The Bot tab plays the day from the calculator's plan (see below). Edit it and push to `main` to update everyone's bookmark.
 - `index.html` is the install page with the bookmarks for Mode 12i and Mode 14.
+- `ff-live.user.js` is the same loader as a Tampermonkey userscript: the FF panel opens by itself on every game tab, with no bookmark to click.
 - `calc/index.html` is the FF calculator as a web page (v32): https://profeinty.github.io/Secret-FF-Doomsday-Project/calc/. Same team passcode; numbers stay on each device (team sharing is only in the other version). Its Go live, FF live bookmark and Copy game reader all use `reader.js` from this site.
 - `docs/plan-format.md` is the message the calculator sends the bot each day, and the reports the bot sends back. `docs/plan-sample.json` is an example.
 - `test/` is a stand-in game for testing the bot without a real game. See [test/README.md](test/README.md).
@@ -33,6 +34,7 @@ The Bot tab follows the calculator's plan: every quantity, price and budget come
 2. **Check the screens** reads every screen the bot uses and sends nothing. **Practice** does everything except send, so you can see what it would do.
 3. **Start** opens the web calculator in a new tab (if it isn't linked yet), takes its plan for the day and runs it in order: B2B deals, shop space, warehouse space, raw materials, store stock, marketing. Each section stays within its budget and cash stays above the plan's reserve. It reports each step back to the calculator and takes the next day's plan when the day changes.
 4. Stop it with its own button, the Stop bar or Esc.
+5. To skip the clicking: install `ff-live.user.js` with Tampermonkey and tick **Run by itself** in the Bot tab once. Then opening the game is enough: the bot starts, opens the calculator (allow pop-ups for the game site once) and plays each day.
 
 Safety: it never opens a cancel-rental link, never shrinks a shop or warehouse unless the plan says release (and leaves giving up a whole location to you), checks a B2B offer's number before accepting or bidding, and counts an order whose answer got lost as bought so it is never sent twice. Machines and prices aren't done by the bot yet: do those in the game.
 
