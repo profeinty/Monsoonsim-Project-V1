@@ -28,7 +28,7 @@ const GAME = page(`${menus}<div id="dash">${dash()}</div><script>
 setInterval(async () => { document.getElementById("dash").innerHTML = await (await fetch("dash")).text(); }, 300);
 </script>`);
 const space = (list, kind) => Object.entries(list).map(([ac, s]) => `<div class="loc"><div><b>Location: ${s.name}</b></div><div>Specification</div><div>${kind} Rental:${s.rate} EUR/Day/m2 Overflow Fee:61 EUR/Day/m2</div>
-${s.area ? `<div>Current Area: ${s.area} m2 : 30-Day, Auto Renew Day: 92</div><a href="ms_sure_learner?cmd=SPACE_MANAGE&ac=${ac}&id=${s.id}&edit=1">Rental Manage</a> <a href="ms_sure_learner?cmd=SPACE_CANCEL&ac=${ac}&id=${s.id}">Cancel</a>`
+${s.area ? `<div>${kind === "Warehouse" ? `Current Area: Current:${s.area} m2Contract:30 Day Auto Renew Day: 84` : `Current Area: ${s.area} m2 : 30-Day, Auto Renew Day: 92`}</div><a href="ms_sure_learner?cmd=SPACE_MANAGE&ac=${ac}&id=${s.id}&edit=1">Rental Manage</a> <a href="ms_sure_learner?cmd=SPACE_CANCEL&ac=${ac}&id=${s.id}">Cancel</a>`
   : `<a href="ms_sure_learner?cmd=SPACE_MANAGE&ac=${ac}">Rent ${kind} Space</a>`}</div>`).join("");
 const MENU = {
   retail_location: () => space(S.shops, "Retail"), whs_location: () => space(S.whs, "Warehouse"),

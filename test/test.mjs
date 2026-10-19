@@ -166,6 +166,7 @@ const pane = p => p.evaluate(new Function(`return ${sh('[data-f="bot"]')}.innerT
     {id: "h:rel", seq: 1, section: "rent_shop", action: "release", target: "Berlin", qty: 100, term: 30, qtyStep: 50, cost: 0},
     {id: "h:shrink", seq: 2, section: "rent_shop", action: "rent", target: "Cologne", qty: 50, term: 30, qtyStep: 50, cost: 0},
     {id: "h:rel0", seq: 3, section: "rent_wh", action: "release", target: "Dusseldorf", qty: 0, cost: 0},
+    {id: "h:whshrink", seq: 3.5, section: "rent_wh", action: "rent", target: "Dusseldorf", qty: 500, term: 30, qtyStep: 500, cost: 0},
     {id: "h:dear", seq: 4, section: "buy_store", action: "buy", target: "Hamburg", product: "Americano", qty: 3000, qtyMin: 3000, qtyMax: 3000, unitPrice: 8.8, unitPriceMax: 9, cost: 27000},
     {id: "h:b2b1", seq: 5, section: "b2b", action: "accept", target: "12", product: "Americano", qty: 3000, price: 14, qtyMax: 5000, cost: 0},
     {id: "h:b2b2", seq: 6, section: "b2b", action: "accept", target: "14", product: "Americano", qty: 1000, price: 13, qtyMax: 5000, cost: 0},
@@ -177,6 +178,7 @@ const pane = p => p.evaluate(new Function(`return ${sh('[data-f="bot"]')}.innerT
   check("H release Berlin to 100 m2", L.S.shops[11].area === 100 && posts.some(x => /rent11=100/.test(x.body)));
   check("H rent never shrinks Cologne", L.S.shops[17].area === 100 && st("h:shrink").st === "done" && !posts.some(x => /rent17=/.test(x.body)));
   check("H release to 0 left to the user", st("h:rel0").st === "skipped" && L.S.whs[26].area === 1000);
+  check("H warehouse area read (game format) and never shrunk", st("h:whshrink").st === "done" && /already 1,000/.test(st("h:whshrink").why) && !posts.some(x => /rent26=/.test(x.body)));
   check("H vendor over unitPriceMax skipped", st("h:dear").st === "skipped" && /allows up to 9/.test(st("h:dear").why) && L.S.stock[13].P1 === 0);
   check("H one B2B deal per product", st("h:b2b1").st === "done" && st("h:b2b2").st === "skipped" && L.S.offers[14] === "open");
   check("H gone offer skipped", st("h:gone").st === "skipped" && /isn't on the B2B list/.test(st("h:gone").why));

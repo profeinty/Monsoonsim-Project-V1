@@ -4,7 +4,7 @@
      the game setup, so it starts in seconds. It only reads, unless you start Auto-click or the Bot (each off until you start it). */
   if (window.__ff && window.__ff.stop) window.__ff.stop();
   document.getElementById("ff-reader-box")?.remove();
-  const V = 4, BUILD = "v8", GAP = 900, CLICK = 1500;   // the game blocks fast clicks: page reads at least GAP ms apart, clicks in Configuration CLICK ms
+  const V = 4, BUILD = "v8.1", GAP = 900, CLICK = 1500;   // the game blocks fast clicks: page reads at least GAP ms apart, clicks in Configuration CLICK ms
   const MODE = String(window.__FF_MODE || ""), TAG = MODE;   // the calculator mode the bookmark was made for (Mode 12i or Mode 14), set by loader.js
   const log = m => console.log("%c[FF] " + m, "color:#B4451C;font-weight:bold");
   const toNum = s => s == null ? null : +String(s).replace(/[^\d.]/g, "");
@@ -602,9 +602,10 @@
     }
     return out;
   };
+  const AREA = /Current Area\s*:?\s*(?:Current\s*:?\s*)?([\d,]+)/i;   // shops: "Current Area: 250 m2", warehouses: "Current Area: Current:8000 m2"
   const locs = h => blocks(h, u => /cmd=SPACE_MANAGE/i.test(u), u => arg(u, "ac")).map(b => ({...b, ac: b.key,
     name: ((b.text.match(/Location\s*:\s*(.+?)\s*(?:\$\(|Specification|Retail Rental|Warehouse Rental|Rental\b|Current Area|Seniors|Population|$)/i) || [])[1] || "").trim(),
-    rate: toNum((b.text.match(/Rental\s*:\s*([\d.]+)/i) || [])[1]), area: toNum((b.text.match(/Current Area\s*:?\s*([\d,]+)/i) || [])[1]) || 0,
+    rate: toNum((b.text.match(/Rental\s*:\s*([\d.]+)/i) || [])[1]), area: toNum((b.text.match(AREA) || [])[1]) || 0, known: AREA.test(b.text), rented: /Rental Manage|Auto Renew|Contract\s*:/i.test(b.text) || b.urls.some(u => /SPACE_CANCEL|[?&]edit=1/i.test(u)),
     link: b.urls.find(u => /[?&](edit=1|id=)/i.test(u)) || b.url}));   // an existing rental: its edit link
   const locOf = (rows, name) => pick1(rows.filter(r => r.name), name, r => r.name) || (x => x.length === 1 ? x[0] : null)(rows.filter(r => nm(name) && norm(r.text).includes(nm(name))));
   const formData = fe => {   // a form as the game filled it in: each field's value, each list's choices, the words beside each box
@@ -796,6 +797,7 @@
       clock(run, s);
       const r = locOf(rows, s.where);
       if (!r) { mark(s, "failed", `no location “${s.where || "?"}” on the ${K.what} space page`); oops(run); return; }
+      if (r.rented && !r.known) { mark(s, "failed", `can't read how much ${K.what} space ${r.name || s.where} has now, so it was left alone`); continue; }
       const step = s.qtyStep > 0 ? s.qtyStep : K.unit;
       let want = s.qty == null ? null : Math.ceil(s.qty/step)*step;
       if (want != null && s.qtyMax != null && want > s.qtyMax) want = Math.floor(s.qtyMax/step)*step;
@@ -1145,9 +1147,11 @@
       for (const part of ["rent_shop", "rent_wh"]) await tryRow(secName(part), async () => {
         const K = SPACE[part], rows = locs(await pageAt(K.menu, true)).filter(r => r.name);
         if (!rows.length) throw new Error("no locations with a rent link on the page");
+        const lost = rows.filter(r => r.rented && !r.known); if (lost.length) throw new Error(`can't read the current area of ${lost.map(r => r.name).join(", ")}`);
+        const had = rows.filter(r => r.area > 0).map(r => `${r.name} ${n(r.area)} m²`).join(", ");
         const r = rows.find(r => r.area > 0) || rows[0], F = await formAt(r.link, true), tk = "terms" + r.ac;
         if (!F.f.has("rent" + r.ac)) throw new Error(`the ${r.name} form has no rent${r.ac} box`);
-        return `${rows.length} locations, ${r.name} form ready${F.f.opts[tk] ? ` (terms ${F.f.opts[tk].map(o => o.v).join(" / ")} days)` : ""}`;
+        return `${rows.length} locations${had ? ` (rented: ${had})` : ""}, ${r.name} form ready${F.f.opts[tk] ? ` (terms ${F.f.opts[tk].map(o => o.v).join(" / ")} days)` : ""}`;
       });
       for (const part of ["buy_raw", "buy_store", "buy_wh_goods"]) await tryRow(secName(part), async () => {
         const vs = await vendorsOf(part); if (!vs.length) throw new Error("no order link on the vendor page");
