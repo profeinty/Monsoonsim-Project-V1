@@ -3,7 +3,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<!-- FF calculator v31 (web) -->
+<!-- FF calculator v32 (web) -->
 <style>
 /* Layout: brand bar + game-data strip on top. Wide screens: inputs as a sticky tabbed sidebar (left),
    today's plan as the main column (right) that the page scrolls. Phones: the plan comes first. */
@@ -2492,6 +2492,8 @@ function renderPlan(){
   else if (XS.cuts.length) todo.push(["warn", `To keep cash above the floor (lowest on day ${f0(XS.cuts[0].day)}), the plan cut ${XS.cuts.map(c => `${CUTN[c.k]} ${fk(c.before)} → ${fk(c.after)}`).join(", ")}.`]);
   for (const w of T.warnings) todo.push(["warn", esc(w)]);
   if (PL) for (const w of PL.warnings.filter(w => /^B2B order /.test(w))) todo.push(["crit", esc(w)]);
+  const unsure = Object.entries(acks).filter(([k, a]) => k.startsWith(`d${R.day}:`) && a.status === "done" && a.unsure).map(([k]) => (SEEN[MODE]?.map.get(k) || {}).action || k);
+  if (unsure.length) todo.push(["warn", `The game didn't answer after ${unsure.length === 1 ? "this bot step, so the plan counts it" : `these ${unsure.length} bot steps, so the plan counts them`} as done. Check in the game: ${unsure.map(esc).join(" · ")}`]);
   if (PL) for (const c of PL.checks.filter(c => !c.ok)) todo.push([c.id === "time" ? "warn" : "crit", c.id === "time" ? `The steps take ~${PL.estSecNow}s for the bot's ${PL.limits.botSec}s: the ones marked “if time is left” go last.` : `Plan check failed: ${esc(c.msg)}. The bot only does must-do steps until it passes.`]);
   const rankT = {crit: 0, warn: 1, act: 2, good: 3};
   todo.sort((x, y) => rankT[x[0]] - rankT[y[0]]);
@@ -3098,14 +3100,16 @@ function bookStep(m, msg){
   const id = String(msg.id || ""), M = SEEN[m], st = M && M.map.get(id);
   if (!st || !/^d\d+:/.test(id)) return;   // not a step of today's plan
   if (msg.practice) return;   // a practice run sends nothing to the game, so nothing is booked
-  const status = ["done", "skip", "fail"].includes(msg.status) ? msg.status : "done";
+  // unsure: the game's answer was lost after sending; the bot counts it as done and never sends it again, so it's booked as done
+  const status = msg.unsure ? "done" : ["done", "skip", "fail"].includes(msg.status) ? msg.status : "done";
   const num = v => v == null || v === "" || !isFinite(+v) ? null : +v;
   update(m, x => {
     const B = x.book = bookOf(x.book, null, Math.max(1, n(x.g.day))), day = Math.max(1, n(x.g.day)), was = B.acks[id];
+    if (was && was.status === "done" && (status !== "done" || (msg.unsure && !was.unsure))) return;   // a repeat never undoes a done report
     const q = num(msg.qty) ?? n(st.qty), each = num(msg.price) ?? n(st.unitPrice), amt = num(msg.amount) ?? (q*each || n(st.budget));
     if (status === "done" && !(B.dayCap && B.dayCap.day === day)) { const pc = PLANS[m] && PLANS[m].day === day && PLANS[m].caps;
       if (pc) B.dayCap = {day, caps: Object.fromEntries(MONEY.map(([k]) => k).concat("stock").filter(k => pc[k]).map(k => [k, {cap: n(pc[k].cap), planned: n(pc[k].planned)}]))}; }
-    B.acks[id] = {status, qty: num(msg.qty), price: num(msg.price), amount: status === "done" && st.budget ? amt : null, sec: st.budgetKey && !st.perDay ? st.budgetKey : null, at: Date.now(), plan: String(msg.planId || "").slice(0, 80), note: String(msg.note || "").slice(0, 160)};
+    B.acks[id] = {status, qty: num(msg.qty), price: num(msg.price), amount: status === "done" && st.budget ? amt : null, sec: st.budgetKey && !st.perDay ? st.budgetKey : null, unsure: !!msg.unsure, at: Date.now(), plan: String(msg.planId || "").slice(0, 80), note: String(msg.note || "").slice(0, 160)};
     if (status !== "done" || (was && was.status === "done")) return;   // a report sent twice is booked once
     const T = st.target || {}, bill = () => { if (n(st.billDay) > day && amt > 0) B.bills.push({dueDay: n(st.billDay), amount: amt, from: id}); };
     if (st.op === "vendorPO") { B.inbound.push({dest: "store", city: T.city, item: T.product, qty: q, arriveDay: n(st.arriveDay), from: id}); bill(); }
