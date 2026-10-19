@@ -4,7 +4,7 @@
      the game setup, so it starts in seconds. It only reads, unless you start Auto-click or the Bot (each off until you start it). */
   if (window.__ff && window.__ff.stop) window.__ff.stop();
   document.getElementById("ff-reader-box")?.remove();
-  const V = 4, BUILD = "v8.3", GAP = 900, CLICK = 1500;   // the game blocks fast clicks: page reads at least GAP ms apart, clicks in Configuration CLICK ms
+  const V = 4, BUILD = "v9", GAP = 900, CLICK = 1500;   // the game blocks fast clicks: page reads at least GAP ms apart, clicks in Configuration CLICK ms
   const MODE = String(window.__FF_MODE || ""), TAG = MODE;   // the calculator mode the bookmark was made for (Mode 12i or Mode 14), set by loader.js
   const log = m => console.log("%c[FF] " + m, "color:#B4451C;font-weight:bold");
   const toNum = s => s == null ? null : +String(s).replace(/[^\d.]/g, "");
@@ -30,8 +30,11 @@
      closer than the gap it refused (remembered for this game, up to 3 s) */
   let floor = Math.min(3000, Math.max(GAP, +mem.gapFloor || 0)), gap = floor, lastHit = 0, slowAt = 0, hits = 0;
   const pace = async (ms = gap) => { for (let w; (w = lastHit + ms - Date.now()) > 0;) await sleep(w); lastHit = Date.now(); };
+  const LOCKED = /PRC|PRICE/i;   // the selling-price commands (CHANGE_RTL_PRC, TRIGGER_RTL_PRICE): selling prices are locked, so none is ever sent
+  const cmds = (url, body) => [...new URL(url, location.href).searchParams.getAll("cmd"), ...(body ? new URLSearchParams(body).getAll("cmd") : [])];
   const req = async (url, body) => {   // a GET, or a form POST (the bot) when there's a body: both in the same queue
     if (/SPACE_CANCEL/i.test(url)) throw new Error("refused: that link cancels a rental");
+    if (cmds(url, body).some(c => LOCKED.test(c))) throw new Error("refused: selling prices are locked");
     if (body != null && new URL(url, location.href).origin !== location.origin) throw new Error("refused: not this game's address");
     for (let t = 0; ; t++) {
       await pace(); hits++;
@@ -72,7 +75,7 @@
         items: [...m[2].matchAll(/([^\n@]+?)\s*@\s*([\d.]+)\s*\n\s*([\d,]+)/g)].map(x => ({name: x[1].trim(), price: +x[2], qty: toNum(x[3])}))}));
     if (!X.stores.length) X.stores = boxStores();   // a screen laid out differently: read the retail boxes themselves
     X.warehouses = [...body.matchAll(/(?:^|\n)([^\n@\d][^\n@]*)\n((?:[^\n@\d][^\n@]*\n\s*[\d,]+\s*\n)+)\s*Machines\s*\n\s*(\d+)\s*\n\s*Space utilization\s*\n?\s*\((\d+)%\)\s*([\d,]+)\s*\/\s*([\d,]+)/g)]
-      .map(m => ({name: m[1].trim(), machines: +m[3], area: toNum(m[6]),
+      .map(m => ({name: m[1].trim(), machines: +m[3], area: toNum(m[6]), used: toNum(m[5]),
         items: [...m[2].matchAll(/([^\n]+?)\s*\n\s*([\d,]+)/g)].map(x => ({name: x[1].trim(), qty: toNum(x[2])}))}));
     return X;
   };
@@ -281,7 +284,10 @@
       }
       if (Object.keys(f).length) { D.forecast = f; D.holidays = [...spikes].sort((a, b) => a - b); D.spike = ratios.length ? Math.round(Math.max(...ratios)*10)/10 : 1; }
     },
-    b2b: async () => { b2bSeries = seriesIn(await page("MENU2_chart_b2b_forecast")).filter(s => s.pairs); b2bNow(); }
+    b2b: async () => { b2bSeries = seriesIn(await page("MENU2_chart_b2b_forecast")).filter(s => s.pairs); b2bNow(); },
+    orders: async () => { if ($id("MENU2_B2Bsoxx")) await readOrders(true); },   // the whole B2B Sales Order list, every bid with every team's price
+    plant: async () => { if (!D.machineTypes && $id("MENU2_PRDbuymach")) D.machineTypes = machineTypes(await page("MENU2_PRDbuymach")).map(({url, ...t}) => t); },
+    web: async () => { if ($id("MENU2_web1")) await readWeb(true); }
   };
   const b2bNow = () => {   // the B2B forecast: average of the next 15 days, worked out again each day from the chart read last
     if (!b2bSeries || !D) return;
@@ -294,6 +300,36 @@
     const mt = text(await page("MENU2_PRDmach"));
     D.ownMachines = [...mt.matchAll(/Asset ID (\d+) Type : (.+?) Age :[\s\S]*?Current Production capacity : ([\d,]+)[\s\S]*?Setup for : ([^$]*?)\s*Timetable/g)]
       .map(m => ({id: m[1], type: m[2].trim(), cap: toNum(m[3]), product: m[4].trim()}));
+    machineStatus();
+  };
+  /* production (Production > Daily Production): units made per product so far ("Total Unit Produced", part of the grading), and per
+     day and machine. Each machine's status: making (made units on the last day), noRaw (made none and a recipe item is short), idle */
+  const machineTypes = h => blocks(h, u => /cmd=PRD_MACHINE_BUY/i.test(u), u => arg(u, "mac") || u).map(b => ({mac: b.key, url: b.url,
+    name: ((b.text.match(/\bM\d+\s+(.+?)\s+Costs?\b/i) || b.text.match(/^(?:Machines\s+)?(.+?)\s+Costs?\b/i) || [])[1] || "").trim(), price: toNum((b.text.match(/Costs?\s*:\s*([\d,.]+)/i) || [])[1]),
+    cap: toNum((b.text.match(/Capacity\s*:\s*([\d,]+)/i) || [])[1]), m2: toNum((b.text.match(/Area\s*:\s*([\d,.]+)/i) || [])[1]), staff: toNum((b.text.match(/Staff Required\s*:\s*(\d+)/i) || [])[1])})).filter(t => t.name);
+  const readProduction = async () => {
+    const d = dom(await page("MENU2_PRDdail")); d.querySelectorAll("script,style").forEach(e => e.remove());
+    const P = {day: today(), total: null, byProduct: {}, perDay: []};
+    for (const m of tx(d.body).matchAll(/Total Unit Produced\s*(.*?)\s*:\s*([\d,]+)\s*\(Unit\)/gi)) { if (m[1]) P.byProduct[m[1].trim()] = toNum(m[2]); else P.total = toNum(m[2]); }
+    const tb = [...d.querySelectorAll("table")].find(t => t.rows.length && /Machine/i.test(tx(t.rows[0])));
+    const rowsOf = (cell, w) => [...cell.querySelectorAll("div")].filter(e => e.children.length >= (w || 3) && (!w || e.children.length === w) && [...e.children].every(c => c.tagName === "DIV" && !c.querySelector("div div")));
+    const head = tb && rowsOf(tb.rows[0])[0], cols = head ? [...head.children].map(tx) : [];
+    const prods = cols.map((c, i) => [i, (c.match(/^Produce\s+(.+?)\s*\(unit\)$/i) || [])[1]]).filter(x => x[1]);
+    if (tb && cols.length) for (const r of [...tb.rows].slice(1, 6)) {
+      const day = toNum(tx(r.cells[0])); if (!day || !r.cells[1]) continue;
+      for (const e of rowsOf(r.cells[1], cols.length)) { const v = [...e.children].map(tx); P.perDay.push({day, machine: v[0], setup: v[1], units: Object.fromEntries(prods.map(([i, p]) => [p, toNum(v[i]) || 0]))}); }
+    }
+    D.production = P; machineStatus();
+  };
+  const whStock = name => (D && D.warehouses || []).reduce((t, w) => t + (w.items || []).filter(it => prodIs(it.name, name)).reduce((a, it) => a + (it.qty || 0), 0), 0);
+  const machineStatus = () => {
+    const P = D.production, last = P && P.perDay.length ? Math.max(...P.perDay.map(x => x.day)) : null;
+    for (const m of D.ownMachines || []) {
+      const rows = last == null ? [] : P.perDay.filter(x => x.day === last && (norm(x.machine).includes(norm(m.id)) || (m.type && norm(x.machine).includes(norm(m.type)))));
+      if (rows.length !== 1) { m.status = "unknown"; m.today = null; continue; }
+      const made = Object.values(rows[0].units).reduce((a, b) => a + b, 0), bom = ((D.products || []).find(p => prodIs(p.name, m.product || rows[0].setup)) || {}).bom || [];
+      m.today = made; m.day = last; m.status = made > 0 ? "making" : bom.some(b => whStock(b.name) < b.q) ? "noRaw" : "idle";
+    }
   };
   const menuList = () => menus().map(a => a.id + (a.textContent.trim() ? "=" + a.textContent.trim().slice(0, 30) : "")).slice(0, 150);
   const checkNew = () => {   // something the setup doesn't know yet (raw materials, machines, a module switched on later): read the setup again
@@ -312,7 +348,10 @@
     if (!salesWait) salesDone(day);
     if (D.ownMachines) deliver();   // (the first read waits for the machines too)
     await quiet(readMachines);
+    if ((D.ownMachines || []).length && $id("MENU2_PRDdail")) await quiet(readProduction, "Production");
+    if ($id("MENU2_B2Bsoxx")) await quiet(() => readOrders(false), "B2B sales orders");   // the newest orders: bid results, what's won and still to ship
     if (BOT.on && !B2B.used && $id("MENU2_B2Bincm")) await quiet(readOffers, "B2B offers");   // the bot's plan needs the offer numbers
+    if (BOT.on && $id("MENU2_web1")) await quiet(() => readWeb(false), "Web Market");   // and the web listings' numbers
     D.menus = menuList(); dayRead = day; checkNew();
     const b0 = sentBody; deliver(); if (lap.day === day && sentBody !== b0) lap.full = Date.now();   // the bot waits for the plan made from all of it
     msg = ""; dayLog(day);
@@ -339,7 +378,7 @@
     if (ready && D.day !== dayRead) await daily();   // a new day came in meanwhile (e.g. while the setup was read): its sales go out first
     say("Reading store rents…"); await quiet(SLOW.rents, "Store rents"); await quiet(SLOW.warehouse);
     say("Reading the demand forecasts…"); await quiet(SLOW.forecast, "Forecast"); D.forecast = D.forecast || {};
-    await quiet(SLOW.b2b); D.b2bForecast = D.b2bForecast || {};
+    await quiet(SLOW.b2b); D.b2bForecast = D.b2bForecast || {}; await quiet(SLOW.plant);
     rememberStock(); lastSlow = Date.now(); wantFull = false;
     say("Reading sales…"); await daily();
     if (!ready) { ready = true; lastSig = ""; paint(); log(`Live: the box at the bottom right follows the game${link.state === "linked" ? " and sends each change to the calculator at once" : ". Click Copy data there to paste it in the calculator"}.`); }
@@ -483,15 +522,16 @@
     let c = l; while (c.parentElement && c.parentElement !== doc.body && [...c.parentElement.querySelectorAll("*")].filter(isLabel).length === 1) c = c.parentElement;
     return c;
   });
-  const offerData = o => ({id: o.id, product: o.product, qty: o.qty, price: o.each, maxBid: o.maxBid, kind: o.kind, due: o.due, state: o.state});
-  const readOffers = async () => { D.b2bOffers = offerCards(dom(await page("MENU2_B2Bincm"))).map(parseOffer).filter(o => o.id).map(offerData); };   // for the calculator: it plans deals by offer number
+  const offerData = o => ({id: o.id, product: o.product, qty: o.qty, price: o.each, maxBid: o.maxBid, kind: o.kind, due: o.due, state: o.state,
+    minBidders: o.minBidders, resultDay: o.resultDay, postDay: o.asked, penalty: o.penalty, client: o.client});
+  const readOffers = async () => { D.b2bOffers = offerCards(dom(await page("MENU2_B2Bincm"))).map(parseOffer).filter(o => o.id).map(offerData); mergeOffers(D.b2bOffers); };   // for the calculator: it plans deals by offer number
   const parseOffer = c => {
     const t = c.textContent.replace(/\s+/g, " "), g = (re, f = x => x) => { const m = t.match(re); return m ? f(m[1]) : null; };
     const pm = t.match(/Product\s*:\s*(.+?)\s+([\d,]+)\s*Unit/i);
     const bid = [...c.querySelectorAll("a,button,input[type=button],input[type=submit]")].find(b => /^\s*bid\s*$/i.test(b.textContent || b.value));
     const o = {id: g(/OFFER\s*(\d+)/), client: g(/Client\s*:\s*(.+?)\s+Product/), product: pm && pm[1].trim(), qty: pm && toNum(pm[2]),
       each: g(/Each\s*:\s*([\d.]+)/, Number), maxBid: g(/Max bid price allowed\s*:\s*([\d.]+)/, Number), due: g(/Expected Delivery Day\s*:\s*(\d+)/, Number),
-      penalty: g(/Late penalty\s*:\s*([\d,]+)/, toNum), asked: g(/Requested\s*(\d+)/, Number)};
+      penalty: g(/Late penalty\s*:\s*([\d,]+)/, toNum), asked: g(/Requested\s*(\d+)/, Number), minBidders: g(/Minimum bidders\s*:\s*(\d+)/, Number), resultDay: g(/Bid Result Day\s*(\d+)/, Number)};
     o.kind = o.maxBid != null ? "bid" : "fixed";
     o.state = /We participated/i.test(t) ? "done" : /Taken by others/i.test(t) ? "gone" : /\b(won|lost|accepted|awarded|expired|closed)\b/i.test(t) ? "done" : o.kind === "bid" && !bid ? "done" : "open";
     return o;
@@ -515,7 +555,7 @@
     B2B.offers = offerCards(dom(h)).map(parseOffer).filter(o => o.id).map(o => {
       const v = judge(o, costs, used); if (v.go) used[o.product] = (used[o.product] || 0) + o.qty; return {...o, v};
     });
-    D.b2bOffers = B2B.offers.map(offerData);
+    D.b2bOffers = B2B.offers.map(offerData); mergeOffers(D.b2bOffers);
     const seen = {}; for (const o of B2B.offers) if (o.v.go) { if (seen[o.product]) { o.v.go = false; o.v.why = "one per product per day"; } seen[o.product] = 1; }
     B2B.at = Date.now(); paint();
   };
@@ -528,6 +568,102 @@
       ${B2B.err ? `<p class="w">${esc(B2B.err)}</p>` : ""}
       ${!B2B.at ? "" : !open.length ? '<p class="m">No open deals right now.</p>' : `<table><tr><th>Deal</th><th class="n">Price</th><th></th></tr>${open.map(o => `<tr><td>${esc(o.product)} ${n(o.qty)}<div class="k">${o.kind === "bid" ? "bid, max " + o.maxBid : "fixed"} · due day ${n(o.due)}</div></td><td class="n">${n(o.v.price)}</td><td>${o.v.go ? '<span class="ok">Grab</span>' : "Skip"}<div class="k">${esc(o.v.why)}</div></td></tr>`).join("")}</table>`}
       ${B2B.at ? `<p class="k">Checked ${esc(new Date(B2B.at).toLocaleTimeString())}, then again each new day.</p>` : ""}`;
+  };
+  /* B2B sales orders (B2B > Sales Order): every offer we bid on or took, won or lost, with every team's bid ("FF 20.28 (WINNER!)",
+     the lowest bid wins). For the calculator: b2bBids, the history it works out a winning bid from, and b2bOrders, the won orders
+     still to deliver. Kept in this browser (the last 300), since the list only shows 5 at a time: page 1 each day, all of it now
+     and then. "void" = cancelled with no winner (fewer bidders than the offer's minimum) */
+  const BKEY = KEY + ":bids";
+  let BIDS = {rows: {}, team: ""};
+  try { const q = JSON.parse(localStorage.getItem(BKEY)); if (q && q.rows) BIDS = q; } catch (e) {}
+  const bidsSave = () => { try { localStorage.setItem(BKEY, JSON.stringify(BIDS)); } catch (e) {} };
+  const FINAL = /^(completed|cancell?ed)$/i;
+  const listRows = d => [...d.querySelectorAll('[id^="row"]')].filter(r => /^row\d+$/.test(r.id));
+  const statusOf = r => { const sp = [...r.querySelectorAll("span")].find(s => /^\s*Status\s*:\s*$/i.test(s.textContent)), d = sp && sp.nextElementSibling; return d ? tx(d) : ""; };
+  const parseSO = r => {
+    const t = tx(r), g = (re, f = x => x) => { const m = t.match(re); return m ? f(m[1]) : null; }, pm = t.match(/Product\s*:\s*(.+?)\s+([\d,]+)\s*Unit/i);
+    const bids = [...r.querySelectorAll("li")].filter(li => !li.querySelector("li") && li.parentElement && li.parentElement.closest("li"))   // the list inside the order (the timeline's isn't)
+      .map(li => tx(li).match(/^(.*\S)\s+(\d+(?:\.\d+)?)\s*(\(\s*WINNER!?\s*\))?$/i)).filter(m => m && !/^(total|requested|approved|bid |fully|delivered)/i.test(m[1]))
+      .map(m => ({team: m[1], price: +m[2], win: !!m[3]}));
+    const al = [...r.querySelectorAll("strong")].map(e => tx(e).match(/([\d,]+)\s*\/\s*([\d,]+)\s*$/)).filter(Boolean).pop(), a = linksIn(r, u => /cmd=B2BECM_SOS_ALLOC/i.test(u))[0];
+    return {so: g(/B2B SO\s*(\d+)/i) || r.id.slice(3), id: g(/Offer ID\s*:\s*(\d+)/i), kind: /Max bid price allowed/i.test(t) ? "bid" : "fixed", client: g(/Client\s*:\s*(.+?)\s+Product\b/i),
+      product: pm && pm[1].trim(), qty: pm && toNum(pm[2]), maxBid: g(/Max bid price allowed\s*:\s*([\d.]+)/i, Number), each: g(/Each\s*:\s*([\d.]+)/i, Number),
+      minBidders: g(/Minimum bidders\s*:\s*(\d+)/i, Number), due: g(/Expected Delivery Day\s*:\s*(\d+)/i, Number), penalty: g(/Late penalty\s*:\s*([\d,]+)/i, toNum),
+      ourBid: g(/We Bid\s*([\d.]+)/i, Number), bids, postDay: g(/Requested\s*(\d+)/i, Number), resultDay: g(/Bid Result Day\s*(\d+)/i, Number),
+      allocDay: g(/Fully Allocated Day\s*(\d+)/i, Number), deliveredDay: g(/Delivered\s*(\d+)/i, Number), status: statusOf(r), allocated: al ? toNum(al[1]) : null, allocUrl: a ? a.url : null};
+  };
+  const isUs = (r, b) => BIDS.team ? b.team === BIDS.team : r.ourBid != null && b.price === r.ourBid;
+  const fin = r => {   // won / lost / void / cancelled (we won it, then it was cancelled) / open (no result yet) / gone (an offer another team took)
+    if (!r.so) return {...r, result: r.result};
+    const win = (r.bids || []).find(b => b.win), st = r.status || "";
+    const result = /cancel/i.test(st) ? (win && !isUs(r, win) ? "lost" : win ? "cancelled" : "void") : /progress|complet|deliver|alloc|ship/i.test(st) ? "won" : win ? (isUs(r, win) ? "won" : "lost") : "open";
+    return {...r, result, winPrice: win ? win.price : result === "won" ? (r.kind === "fixed" ? r.each : r.ourBid) : null, winner: win ? win.team : result === "won" ? BIDS.team || "us" : null};
+  };
+  const bidsOut = () => {   // into the data for the calculator
+    const all = Object.values(BIDS.rows).map(fin).sort((a, b) => (b.postDay || 0) - (a.postDay || 0) || (+b.so || +b.id || 0) - (+a.so || +a.id || 0));
+    for (const r of all.slice(300)) delete BIDS.rows[(r.so ? "s" : "o") + (r.so || r.id)];
+    D.b2bBids = all.slice(0, 300).map(r => ({id: r.id, so: r.so || null, product: r.product, qty: r.qty, kind: r.kind, maxBid: r.maxBid ?? null, each: r.each ?? null, minBidders: r.minBidders ?? null,
+      postDay: r.postDay ?? null, resultDay: r.resultDay ?? null, due: r.due ?? null, penalty: r.penalty ?? null, client: r.client || null, ourBid: r.ourBid ?? null, result: r.result,
+      winPrice: r.winPrice ?? null, winner: r.winner ?? null, bids: (r.bids || []).map(b => ({team: b.team, price: b.price, us: isUs(r, b)})), status: r.status || null, allocDay: r.allocDay ?? null, deliveredDay: r.deliveredDay ?? null}));
+    if (BIDS.team) D.team = BIDS.team;
+    if (BIDS.full) D.b2bOrders = all.filter(r => r.result === "won" && !(r.deliveredDay && r.deliveredDay < today() - 10)).map(r => ({id: r.so, offer: r.id, product: r.product, qty: r.qty, each: r.winPrice,
+      due: r.due, allocated: r.allocated ?? (r.allocDay ? r.qty : null), delivered: !!r.deliveredDay, deliverDay: r.deliveredDay ?? null, status: r.status, penalty: r.penalty ?? null}));   // only once the whole list was read: the calculator takes it as the full book
+  };
+  const bidsFresh = () => {   // the day went back or the game length changed: another game, so its history starts over
+    const d = today(), mx = D && D.maxDay;
+    if ((BIDS.day && d && d < BIDS.day - 1) || (BIDS.maxDay && mx && BIDS.maxDay !== mx)) BIDS = {rows: {}, team: ""};
+    if (d) BIDS.day = d; if (mx) BIDS.maxDay = mx;
+  };
+  const teamOf = () => { const v = {}; for (const r of Object.values(BIDS.rows)) if (r.ourBid != null) { const m = (r.bids || []).filter(b => b.price === r.ourBid); if (m.length === 1) v[m[0].team] = (v[m[0].team] || 0) + 1; }
+    return (Object.entries(v).sort((a, b) => b[1] - a[1])[0] || [BIDS.team || ""])[0]; };   // our name: the one bidding what "We Bid" says
+  const readOrders = async deep => {   // deep: the next pages too (Load More), until only finished orders it already has; picked up again if a new day comes first
+    bidsFresh();
+    let h = await page("MENU2_B2Bsoxx"), pages = 0;
+    for (;;) {
+      const d = dom(h); d.querySelectorAll("script,style").forEach(e => e.remove());
+      let known = true, more = (d.querySelector("#loadmore") || {getAttribute: () => null}).getAttribute("href");
+      for (const r of listRows(d)) {
+        const x = parseSO(r); if (!x.so) continue;
+        const old = BIDS.rows["s" + x.so]; if (!(old && FINAL.test(old.status || "") && FINAL.test(x.status))) known = false;
+        BIDS.rows["s" + x.so] = {...old, ...x, seen: today()}; if (x.id) delete BIDS.rows["o" + x.id];
+      }
+      if (!pages++ && deep && !BIDS.full && BIDS.cursor) more = BIDS.cursor;   // a long first read that stopped: on from where it was
+      if (!deep) break;
+      if (!more) { BIDS.full = true; BIDS.cursor = null; break; }
+      if (BIDS.full && known) break;
+      if (pages >= 25 || stopped || D.day !== dayRead || BOT.busy || BOT.prepping) { BIDS.cursor = more; break; }
+      h = await get(abs(more));
+    }
+    BIDS.team = teamOf(); bidsSave(); bidsOut();
+  };
+  const mergeOffers = offers => {   // offers we're in with no sales order yet (open) and fixed deals another team took (gone)
+    let n0 = 0; bidsFresh();
+    const so = new Set(Object.values(BIDS.rows).filter(r => r.so && r.id).map(r => String(r.id)));
+    for (const o of offers || []) if ((o.state === "gone" || o.state === "done") && !so.has(String(o.id))) {
+      BIDS.rows["o" + o.id] = {id: o.id, so: null, product: o.product, qty: o.qty, kind: o.kind, maxBid: o.maxBid, each: o.price, minBidders: o.minBidders, postDay: o.postDay, resultDay: o.resultDay,
+        due: o.due, penalty: o.penalty, client: o.client, bids: [], result: o.state === "gone" ? "gone" : "open", status: o.state === "gone" ? "Taken by others" : "We participated", seen: today()}; n0++;
+    }
+    if (n0) bidsSave(); bidsOut();
+  };
+
+  /* the Web Market (E-commerce > Web Market): listings ("WTS" = for sale, bought whole with "We buy"), our own "+ Post", and our web
+     purchase and sales orders */
+  const WEB = {rows: [], post: null, at: 0};
+  const webRow = r => {
+    const t = tx(r), g = (re, f = x => x) => { const m = t.match(re); return m ? f(m[1]) : null; }, a = linksIn(r, u => /ms_sure_learner\?/i.test(u))[0];
+    return {id: g(/\bID\s*:?\s*(\d+)/) || r.id.slice(3), kind: tx(r.querySelector("h6")), product: tx(r.querySelector("ol li b")).replace(/\s*Price\s*:.*$/i, "") || g(/\bID\s*:?\s*\d+\s*(.+?)\s+Price\s*:/i), price: g(/Price\s*:\s*([\d,.]+)/i, toNum),
+      qty: g(/Quantity\s*:\s*([\d,]+)/i, toNum), days: g(/Shipment\s*:\s*(\d+)/i, Number), seller: g(/Seller\s*:\s*(.+?)(?:\s*Rating\s*:|\s*We buy\b|$)/i), url: a ? a.url : null, cmd: a ? arg(a.url, "cmd") : null};
+  };
+  const orderRows = h => listRows(dom(h)).map(r => { const t = tx(r), a = linksIn(r, u => /cmd=B2BECM_SOS_ALLOC/i.test(u))[0];
+    return {id: r.id.slice(3), text: t.slice(0, 240), product: (t.match(/Product\s*:\s*(.+?)\s+([\d,]+)/i) || [])[1] || null, qty: toNum((t.match(/Product\s*:\s*.+?\s+([\d,]+)/i) || [])[1]),
+      status: statusOf(r) || null, allocUrl: a ? a.url : null}; });
+  const readWeb = async deep => {
+    const h = await page("MENU2_web1"), d = dom(h), post = linksIn(d, u => /cmd=WEB_POST/i.test(u))[0];
+    WEB.rows = listRows(d).map(webRow).filter(x => x.id); WEB.at = Date.now(); if (post) WEB.post = post.url;
+    D.web = {...(D.web || {}), day: today(), listings: WEB.rows.map(({url, cmd, ...x}) => x)};
+    if (deep && $id("MENU2_web_pos")) D.web.pos = orderRows(await page("MENU2_web_pos")).map(({allocUrl, ...x}) => x);
+    if (deep && $id("MENU2_web_sos")) D.web.sos = orderRows(await page("MENU2_web_sos")).map(({allocUrl, ...x}) => ({...x, toShip: !!allocUrl}));
+    return WEB.rows;
   };
   const paneAuto = () => `<p><label><input type="checkbox" data-ac="on" ${AC.on ? "checked" : ""} ${AC.picks.length ? "" : "disabled"}> <b>Auto-click ${AC.on ? '<span class="ok">ON</span>' : "off"}</b></label></p>
       <p class="k">Presses the buttons below in order, waits, then repeats. Esc or Stop ends it. It never types into fields.</p>
@@ -544,13 +680,14 @@
      stays under its budget, and cash (the dashboard's, less what the bot spent today) above the plan's reserve. The game must be
      on the plan's day with about the plan's cash, else the bot asks for a fresh plan. Every answer from the game is read: error
      words fail the step; 2 failures in a row, or more than the plan's error budget, stop the bot (and tell the calculator).
-     It never opens a Cancel link and skips screens not mapped yet (machines, prices). Practice does everything but send, and
-     reports nothing to the calculator. Plan format: plan-format.md, written by the calculator side. */
+     It never opens a Cancel link and never changes a selling price (price steps are skipped, and the reader refuses the price
+     commands). After the steps it ships won B2B orders from the warehouse stock (see autoShip). Practice does everything but send,
+     and reports nothing to the calculator. Plan format: plan-format.md, written by the calculator side. */
   const SECTIONS = [["b2b", "B2B deals"], ["machine", "Machines"], ["rent_wh", "Warehouse space"], ["rent_shop", "Shop space"],
-    ["buy_store", "Store stock"], ["buy_raw", "Raw materials"], ["buy_wh_goods", "Stock for B2B"], ["price", "Prices"], ["marketing", "Marketing"], ["other", "Not known"]];
+    ["buy_store", "Store stock"], ["buy_raw", "Raw materials"], ["buy_wh_goods", "Stock for B2B"], ["ecom", "E-commerce"], ["price", "Prices"], ["marketing", "Marketing"], ["other", "Not known"]];
   const secName = k => (SECTIONS.find(x => x[0] === k) || [k, k])[1];
-  const ACTS = {b2b: ["accept", "bid"], rent_shop: ["rent", "release"], rent_wh: ["rent", "release"], buy_store: ["buy"], buy_raw: ["buy"], buy_wh_goods: ["buy"],
-    marketing: ["set", "pause"], machine: null, price: null};   // what the bot can do in each section (null: its screens aren't mapped yet)
+  const ACTS = {b2b: ["accept", "bid", "ship"], rent_shop: ["rent", "release"], rent_wh: ["rent", "release"], buy_store: ["buy"], buy_raw: ["buy"], buy_wh_goods: ["buy"],
+    marketing: ["set", "pause"], machine: ["buy", "priority"], ecom: ["buy", "sell"], price: null};   // what the bot can do in each section (price: nothing, prices are locked)
   const BOT = {on: false, busy: false, prepping: false, cut: false, loop: null, say: "", note: "", warn: "", plans: {}, run: null, days: {},
     pages: {}, forms: {}, expect: [], fails: 0, prepDay: 0, startAt: 0, dry: false, checking: false, check: [], checkAt: 0, askAt: 0};
   const dayKey = d => BOT.dry ? "p" + d : d;   // a practice day is kept apart: the real run that day still does every step
@@ -569,11 +706,13 @@
   const stepText = s => s.text || [s.act, s.offer ? "offer " + s.offer : s.where || (s.target !== s.product ? s.target : ""), s.product, s.qty != null ? n(s.qty) : "", s.price != null ? "at " + s.price : ""].filter(Boolean).join(" ");
 
   /* the plan: the newest one for each day, its steps in the bot's terms. "" when it was taken, else why not */
-  const toStep = (c, i) => {   // target: the city, warehouse, offer number, machine type or product (a string; an object's city/store/order also works)
-    const t = c.target, o = t && typeof t === "object" ? t : {}, sec = own(ACTS, c.section) ? c.section : "other", act = String(c.action || "").toLowerCase();
-    const tgt = String(t != null && typeof t !== "object" ? t : o.city || o.store || o.warehouse || o.order || o.offer || "").trim();
-    return {...c, id: String(c.id ?? [sec, act, tgt, c.product || o.product, c.agency].join("|")), sec, act, target: tgt, where: /^(b2b|machine|price)$/.test(sec) ? "" : tgt.replace(/\s+(retail|store|shop)$/i, ""),
-      offer: sec === "b2b" ? tgt : "", product: c.product || o.product || (sec === "price" ? tgt : null), qty: num(c.qty), qtyMin: num(c.qtyMin), qtyMax: num(c.qtyMax), qtyStep: num(c.qtyStep),
+  const toStep = (c, i) => {   // target: the city, warehouse, offer / order / listing number, machine type or product (a string; an object's city/store/order also works)
+    const t = c.target, o = t && typeof t === "object" && !Array.isArray(t) ? t : {}, sec = own(ACTS, c.section) ? c.section : "other", act = String(c.action || "").toLowerCase();
+    const tgt = String(t != null && typeof t !== "object" ? t : o.city || o.store || o.warehouse || o.order || o.offer || o.listing || "").trim();
+    return {...c, id: String(c.id ?? [sec, act, tgt, c.product || o.product, c.agency].join("|")), sec, act, target: tgt,
+      where: /^(b2b|machine|price|ecom)$/.test(sec) ? String(c.dest ?? c.where ?? c.warehouse ?? o.dest ?? o.warehouse ?? "").trim() : tgt.replace(/\s+(retail|store|shop)$/i, ""),
+      order: Array.isArray(c.order) ? c.order.map(String) : Array.isArray(t) ? t.map(String) : null, days: num(c.days), repeat: c.repeat === true || /^REP$/i.test(String(c.type ?? "")),
+      offer: /^(b2b|ecom)$/.test(sec) ? tgt : "", product: c.product || o.product || (sec === "price" ? tgt : null), qty: num(c.qty), qtyMin: num(c.qtyMin), qtyMax: num(c.qtyMax), qtyStep: num(c.qtyStep),
       price: num(c.price), floor: num(c.floor), unitPrice: num(c.unitPrice), unitPriceMax: num(c.unitPriceMax), cost: num(c.cost) ?? num(c.budget) ?? 0, key: c.budgetKey || sec,
       must: !!c.must, deps: Array.isArray(c.deps) ? c.deps.map(String) : [], slot: c.slot === "later" ? "later" : "now", seq: num(c.seq) ?? i, text: typeof c.text === "string" ? c.text : "",
       term: c.term ?? c.terms ?? null, state: "", why: ""};
@@ -679,7 +818,7 @@
   };
   const refuse = (run, s, cost, pend = 0) => { if (!(cost > 0)) return ""; const r = room(run, s, pend); return cost > r.eur + 0.5 ? `over ${r.why}: ${n(Math.round(cost))} more is too much` : ""; };
   const report = s => {   // the step's outcome to the calculator, so it books it (not in practice, and not a step left for later)
-    const r = BOT.run; if (!r || BOT.dry || !s.final || !/^(done|skipped|failed)$/.test(s.state)) return;
+    const r = BOT.run; if (!r || BOT.dry || s.auto || !s.final || !/^(done|skipped|failed)$/.test(s.state)) return;   // (the bot's own shipping isn't a plan step: b2bOrders shows it)
     const m = {ff: "step", planId: r.plan.planId ?? null, id: s.id, status: {done: "done", skipped: "skip", failed: "fail"}[s.state], qty: s.qtyDone ?? null, price: s.priceDone ?? null,
       amount: s.amount ?? null, orderId: s.orderId ?? null, due: s.due ?? null, unsure: !!s.unsure, note: s.why || ""};
     if (r.rec) { r.rec.reports[s.id] = m; botSave(); }   // kept for the day: sent again when the plan still lists it or the link comes back
@@ -720,14 +859,14 @@
     const m = `Cash is ${n(cash)} after the steps, the plan expected at least ${n(min)}.`; run.notes.push(m); BOT.warn = `Day ${run.day}: ${m}`; log("Bot warning: " + m);
   };
 
-  /* B2B: the plan names the offer by its number. Accept = the offer's Accept control (and its form); bid = the Bid form at the
-     plan's price. Never under the product's floor, never more units than the plan can deliver, one deal per product a day.
-     Neither screen has been seen in a running game yet, so their answers are only read for error words */
+  /* B2B: the plan names the offer by its number. Accept = the offer's Deal link and its confirm form (B2B_DEAL); bid = the Bid
+     form (B2B_BID, one bidprice box) at the plan's price. Never under the product's floor, never more units than the plan can
+     deliver, one deal per product a day. Ship = allocate a won order's stock (see shipOne) */
   const ctl = (card, re) => [...card.querySelectorAll("a,button,input[type=button],input[type=submit]")].find(b => re.test(((b.textContent || "") + " " + (b.getAttribute("value") || "")).trim()));
   const forOffer = (f, id) => /B2B/i.test(cmdOf(f) + " " + f.action) && new RegExp(`(^|\\D)${reEsc(id)}(\\D|$)`).test(f.action + " " + f.fields.map(x => x[1]).join(" "));
   const strange = what => ({err: `an unexpected screen came up after ${what}, so nothing more was sent: check the offer in the game`, unsure: true});
   const acceptOn = async (card, list, id) => {
-    const c = ctl(card, /accept|take|confirm/i); if (!c) return {err: "no Accept button on the offer card"};
+    const c = ctl(card, /^(deal|accept|take|confirm)\b/i); if (!c) return {err: "no Deal button on the offer card"};
     const fe = c.closest("form");
     if (fe) { const f = formData(fe); if (c.type === "submit" && c.name) f.btn = [c.name, c.value]; return submit(f, {}, list); }
     const u = urlOf(c); if (!u) return {err: "the Accept button has no link the bot can follow"};
@@ -749,7 +888,12 @@
     if (qk) set[qk] = String(o.qty);
     return submit(f, set, h);
   };
-  const b2bRun = async (run, list) => {
+  const b2bRun = async (run, list) => {   // deals and bids first (they go fast), then shipping
+    const deals = list.filter(s => s.act !== "ship"), ships = list.filter(s => s.act === "ship");
+    if (deals.length) await dealRun(run, deals);
+    for (const s of ships) { if (!live(run.day)) return; clock(run, s); await shipStep(run, s); }
+  };
+  const dealRun = async (run, list) => {
     const h = await page("MENU2_B2Bincm"), cards = offerCards(dom(h)).map(c => ({c, o: parseOffer(c)})).filter(x => x.o.id);   // read fresh: the deals go fast
     const rules = (run.plan.b2b || {}).rules || {}, floors = run.plan.floors || run.plan.b2bBidFloor || {}, sent = [];
     for (const s of list) {
@@ -785,7 +929,238 @@
       else if (after) { s.unsure = true; mark(s, "failed", r.err || (o ? `${what}: the offer still shows open after the bot's answer` : `${what}: the offer left the list, check it in the game`)); oops(run); }
       else settle(run, s, r, cost, `${what} (the list couldn't be read again to check)`);
     }
+    if (after) { mergeOffers(after.filter(o => o.id).map(offerData)); if ($id("MENU2_B2Bsoxx")) await quiet(() => readOrders(false)); deliver(); }   // the new order goes to the calculator's book
   };
+
+  /* shipping a won order (B2B > Sales Order > "Allocate, Pack, and Ship"): the screen's script lists every batch of stock (oriData)
+     and the page sends the batches picked as hidBatchData. The bot builds that list as the page would: warehouse batches only
+     (stores too with rules.shipFromStores), the oldest first, up to what the order still needs; part of it when the game allows
+     it (allowPartialMove) unless rules.partialShip is false. The game delivers the day after the order is all allocated */
+  const jsLit = s => {   // a list or object as a page's script writes it ({pc:3,name:'Bubble Milk Tea'}), read as JSON
+    const strs = [], k = s.replace(/'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"/g, (m, a, b) => { strs.push((a ?? b).replace(/\\(.)/g, "$1")); return "\u0001" + (strs.length - 1) + "\u0001"; });
+    return JSON.parse(k.replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":').replace(/,\s*([}\]])/g, "$1").replace(/\u0001(\d+)\u0001/g, (m, i) => JSON.stringify(strs[+i])));
+  };
+  const scriptVal = (sc, name) => {   // the value of `const name = {...}` / `[...]` in a page's script (strings may hold brackets)
+    const m = sc.match(new RegExp(`\\b(?:const|let|var)\\s+${name}\\s*=\\s*`)); if (!m) return null;
+    const i = m.index + m[0].length, open = sc[i], close = open === "[" ? "]" : open === "{" ? "}" : null; if (!close) return null;
+    for (let j = i, depth = 0, q = null; j < sc.length; j++) {
+      const ch = sc[j];
+      if (q) { if (ch === "\\") j++; else if (ch === q) q = null; }
+      else if (ch === "'" || ch === '"') q = ch;
+      else if (ch === open) depth++;
+      else if (ch === close && --depth === 0) return jsLit(sc.slice(i, j + 1));
+    }
+    return null;
+  };
+  const rulesOf = run => ({...(run.plan.rules || {}), ...((run.plan.b2b || {}).rules || {})});
+  const shipOne = async (run, s, url) => {   // {ok, qty} / {skip} / {err}; s.qty (if any) = at most this many
+    const rules = rulesOf(run), h = await get(url), d = dom(h), sc = [...d.querySelectorAll("script")].map(x => x.textContent).join("\n"), f = formOf(h);
+    let pd = null, ori = null; try { pd = scriptVal(sc, "prodData"); ori = scriptVal(sc, "oriData"); } catch (e) {}
+    const to = (sc.match(/addBatchData\(\s*\w+\s*,\s*\w+\s*,\s*\w+\s*,\s*\w+\s*,\s*['"](\w+)['"]/) || [])[1];
+    if (!f || !f.has("hidBatchData") || !/ALLOC/i.test(cmdOf(f)) || !pd || !Array.isArray(ori) || !to) return {err: "the allocate screen isn't as the bot knows it, so nothing was sent: ship it in the game"};
+    const need = Math.max(0, (num(pd.qntNeed) || 0) - (num(pd.qntAlloc) || 0)), most = s.qty != null ? Math.min(need, s.qty) : need;
+    s.product = s.product || pd.name;
+    if (!(need > 0)) return {skip: "it's all allocated already"};
+    const docks = {}; for (const e of d.querySelectorAll('[id^="sourceDock"]')) docks[String(e.getAttribute("lc") || e.id.replace(/^sourceDock/, ""))] = tx(e.firstElementChild || e);
+    const stores = rules.shipFromStores === true || s.fromStores === true, isWh = b => /warehouse/i.test(docks[String(b.lc)] || "") || (!docks[String(b.lc)] && +b.priority === 0);
+    const bs = ori.filter(b => b && parseInt(b.qnt) > 0 && String(b.pc) === String(pd.pc) && (stores || isWh(b)))
+      .sort((a, b) => isWh(b) - isWh(a) || (+a.exp || 0) - (+b.exp || 0) || (+a.dayIn || 0) - (+b.dayIn || 0) || parseInt(b.qnt) - parseInt(a.qnt));
+    const pick = []; let tot = 0;
+    for (const b of bs) {
+      if (tot >= most) break;
+      const q = Math.min(parseInt(b.qnt), most - tot);
+      pick.push({id: String(b.id), batchid: b.batch, productCode: String(b.pc), from: String(b.lc), to, qnt: parseInt(b.qnt), qntAlloc: q, dayIn: b.dayIn, priority: String(b.priority), exp: b.exp, status: parseInt(b.status)});
+      tot += q;
+    }
+    const partial = /allowPartialMove\s*=\s*1\b/.test(sc), where = stores ? "the warehouses and stores" : "the warehouses";
+    if (!tot) return {skip: `no ${pd.name || "stock"} in ${where} yet`};
+    if (tot < need && !(partial && rules.partialShip !== false && s.partial !== false)) return {skip: `only ${n(tot)} of the ${n(need)} still needed in ${where}${partial ? "" : ", and the game wants it all at once"}`};
+    Object.assign(s, {qtyDone: tot, need, priceDone: null, amount: 0});
+    return {...await submit(f, {hidBatchData: JSON.stringify(pick)}, h), qty: tot, need};
+  };
+  const orderOf = id => Object.values(BIDS.rows).map(fin).find(r => r.so && (String(r.so) === String(id) || String(r.id) === String(id)));   // by sales order or offer number
+  const shipped = (s, o, r) => `${n(r.qty)} ${o.product} allocated to order ${o.so}${r.qty < r.need ? `, ${n(r.need - r.qty)} still to go` : ", all of it"} (due day ${o.due ?? "?"})`;
+  const shipStep = async (run, s) => {   // a plan step: ship this order
+    let o = s.offer && orderOf(s.offer);
+    if (s.offer && (!o || !o.allocUrl)) { await quiet(() => readOrders(false)); o = orderOf(s.offer); }
+    const no = !s.offer ? "the plan gives no sales order number" : !o ? `order ${s.offer} isn't on the B2B Sales Order list` : o.result !== "won" ? `order ${o.so} is ${o.status || o.result}`
+      : !o.allocUrl ? `order ${o.so} has nothing left to allocate (${o.status || "?"})` : s.product && !prodIs(o.product, s.product) ? `order ${o.so} is for ${o.product}, the plan says ${s.product}` : "";
+    if (no) { mark(s, "skipped", no); return; }
+    Object.assign(s, {so: o.so, orderId: o.so, due: o.due ?? null});
+    const r = await shipOne(run, s, o.allocUrl);
+    settle(run, s, r, 0, r.qty ? shipped(s, o, r) : "");
+    if (r.ok && !BOT.dry) { await quiet(() => readOrders(false)); deliver(); }
+  };
+  const autoShip = async (run, rec) => {   // after the plan's steps: every won order with stock to send, the earliest due first (rules.autoShip false: off)
+    const rules = rulesOf(run); if (rules.autoShip === false) return;
+    const max = num(rules.maxShipsPerDay) ?? 4, stores = rules.shipFromStores === true, known = (D.warehouses || []).length > 0, out = [];
+    const planned = new Set(run.steps.filter(s => s.sec === "b2b" && s.act === "ship" && s.so).map(s => String(s.so)));
+    const todo = $id("MENU2_B2Bsoxx") ? Object.values(BIDS.rows).map(fin).filter(o => o.so && o.result === "won" && o.allocUrl && !o.deliveredDay && !planned.has(String(o.so)))
+      .sort((a, b) => (a.due ?? 1e9) - (b.due ?? 1e9) || +a.so - +b.so).map(o => ({o, id: `auto:ship:${o.so}`, url: o.allocUrl, text: `ship order ${o.so}: ${o.product}, due day ${o.due ?? "?"}`})) : [];
+    if (rules.shipWeb !== false && $id("MENU2_web_sos") && (mem.webPosted || ((D.web || {}).sos || []).some(w => w.toShip))) try {   // web sales orders (people who bought our web posts) too, before their short shipping time runs out
+      const ws = orderRows(await page("MENU2_web_sos")).filter(w => w.allocUrl);
+      todo.unshift(...ws.map(w => ({o: {so: w.id, product: w.product, qty: w.qty, due: null}, id: `auto:webship:${w.id}`, url: w.allocUrl, text: `ship web order ${w.id}${w.product ? ": " + w.product : ""}`})));
+    } catch (e) { run.notes.push("Web sales orders: " + e.message); }
+    let sent = 0, fails = 0;
+    for (const x of todo) {
+      if (!live(run.day) || sent >= max || fails >= 2) break;
+      if (rec.tried.has(x.id)) continue;
+      const s = {...toStep({id: x.id, section: "b2b", action: "ship", target: x.o.so, product: x.o.product}, 9999), auto: true, so: x.o.so, orderId: x.o.so, text: x.text};
+      run.steps.push(s); clock(run, s);
+      if (!stores && known && x.o.product && whStock(x.o.product) <= 0) { mark(s, "skipped", `no ${x.o.product} in the warehouses yet`); continue; }
+      const r = await shipOne(run, s, x.url); sent++;
+      if (r.skip) { mark(s, "skipped", r.skip); continue; }
+      if (r.err) { fails++; s.unsure = !!r.unsure; mark(s, "failed", r.err); BOT.warn = `Day ${run.day}: couldn't ship order ${x.o.so}: ${r.err}`; continue; }
+      fails = 0; BOT.fails = 0; mark(s, "done", `${BOT.dry ? "practice, not sent: " : ""}${shipped(s, {...x.o, product: s.product}, r)}`); out.push(s);
+    }
+    if (out.length && !BOT.dry && $id("MENU2_B2Bsoxx")) { await quiet(() => readOrders(false)); deliver(); }
+    if (out.length) run.sec.b2b = `shipped ${out.length} order${out.length > 1 ? "s" : ""}`;
+  };
+
+  /* machines (Production): buy = the Buy Machine form of that type (Machine A / B), one machine a submit, at the warehouse the plan
+     names, each within budgets.machine and the cash reserve, and only while the warehouse has the floor space for it (the
+     dashboard's free m², with today's warehouse rent counted; rules.machineSpaceCheck false: not checked). priority = the order
+     products are made in (Production Priority). What a machine makes isn't mapped yet (no game with a machine seen so far) */
+  const lcKey = f => Object.keys(f.opts).find(k => /^lc$/i.test(k)) || destOf(f) || (x => x.length === 1 ? x[0] : null)(Object.keys(f.opts));
+  const whFree = (run, where) => {   // read once a day (before its first machine), less the machines bought since: the dashboard may or may not count a new one at once
+    const X = dash(), ws = (X.warehouses || []).length ? X.warehouses : D.warehouses || [], w = where ? pick1(ws, where, x => x.name) : ws.length === 1 ? ws[0] : null;
+    if (!w || w.area == null || w.used == null) return null;
+    const k = nm(w.name), base = run.whBase = run.whBase || {};
+    if (base[k] == null) { const r = run.steps.filter(x => x.sec === "rent_wh" && x.act === "rent" && x.state === "done" && x.qtyDone > 0 && same(x.where, w.name)).pop(); base[k] = Math.max(w.area, r ? r.qtyDone : 0) - w.used; }
+    return base[k] - ((run.machineM2 || {})[k] || 0);
+  };
+  const machineRun = async (run, list) => {
+    for (const s of list) {
+      if (!live(run.day)) return;
+      clock(run, s);
+      if (s.act === "priority") await machineOrder(run, s); else await machineBuy(run, s);
+      if (s.state === "failed" && !s.unsure && !BOT.on) return;
+    }
+  };
+  const machineBuy = async (run, s) => {
+    const types = machineTypes(await pageAt("MENU2_PRDbuymach")); D.machineTypes = types.map(({url, ...t}) => t);
+    const t = pick1(types, s.target || s.product, x => x.name);
+    if (!t) { mark(s, "failed", `no machine “${s.target || "?"}” on the Buy Machine page${types.length ? ` (${types.map(x => x.name).join(", ")})` : ""}`); oops(run); return; }
+    let count = Math.floor(s.qty ?? 1); const each = t.price ?? (s.cost > 0 && count > 0 ? s.cost/count : null), cap = s.unitPriceMax ?? s.unitPrice;
+    if (!(count > 0)) { mark(s, "skipped", "the plan asks for 0 machines"); return; }
+    if (each == null) { mark(s, "skipped", `no price for ${t.name} on the page`); return; }
+    if (cap != null && each > cap + 1e-9) { mark(s, "skipped", `${t.name} costs ${n(each)}, the plan allows up to ${n(cap)}`); return; }
+    const F = await formAt(t.url), f = F.f, lk = lcKey(f), os = lk ? (f.opts[lk] || []).filter(o => o.v !== "") : [];
+    const at = s.where ? pick1(os, s.where, o => placeOf(o.t)) : os.length === 1 ? os[0] : null;
+    if (!at) { mark(s, "failed", lk ? `no single warehouse “${s.where || "?"}” on the buy form (${os.map(o => o.t).join(", ")})` : "the buy form has no warehouse list"); oops(run); return; }
+    let note = "";
+    const free = rulesOf(run).machineSpaceCheck === false || !(t.m2 > 0) ? null : whFree(run, placeOf(at.t));
+    if (free != null && Math.floor(free/t.m2) < count) {
+      const fit = Math.max(0, Math.floor(free/t.m2));
+      if (!fit) { mark(s, "skipped", `${placeOf(at.t)} has ${n(Math.round(free))} m² free, a ${t.name} needs ${n(t.m2)} m²`); return; }
+      note = `; only ${fit} fit in the ${n(Math.round(free))} m² free`; count = fit;
+    }
+    let got = 0, res = {ok: true};
+    for (let i = 0; i < count; i++) {
+      if (!live(run.day)) { res = {skip: BOT.on ? "the day ended" : "the bot was stopped", wait: true}; break; }
+      const why = refuse(run, s, each); if (why) { res = {skip: why}; break; }
+      res = await submit(f, {[lk]: at.v}, F.html);
+      if (!res.ok) { if (res.unsure) { book(run, s, each); got++; } break; }   // (no clear answer: it may have gone through, so it counts)
+      spend(run, s, each); got++; const mk = nm(placeOf(at.t)); run.machineM2 = run.machineM2 || {}; run.machineM2[mk] = (run.machineM2[mk] || 0) + (t.m2 || 0);
+    }
+    delete BOT.forms[t.url];
+    Object.assign(s, {qtyDone: got, priceDone: each, amount: got*each});
+    const what = `${got} ${t.name} at ${n(each)} for ${placeOf(at.t)}${got < count ? ` (of ${count})` : ""}${note}${BOT.dry ? ", practice, not sent" : ""}`;
+    if (res.ok || (got && res.skip)) { mark(s, "done", what + (res.skip ? `, then ${res.skip}` : "")); return; }
+    if (res.skip) { mark(s, "skipped", res.skip, !res.wait); return; }
+    s.unsure = !!res.unsure; mark(s, "failed", got ? `${what}, then ${res.err}` : res.err); oops(run);
+  };
+  const machineOrder = async (run, s) => {
+    const link = blocks(await pageAt("MENU2_PRDpord"), u => /cmd=PRD_PRODUCT_ORDER/i.test(u), u => u)[0];
+    if (!link) { mark(s, "failed", "no Production Priority link"); oops(run); return; }
+    const F = await formAt(link.url), f = F.f, k = Object.keys(f.opts).find(k => /PRDLINE/i.test(k)) || (x => x.length === 1 ? x[0] : null)(Object.keys(f.opts));
+    const want = s.order || String(s.target || "").split(/\s*(?:,|>|\s-\s)\s*/).filter(Boolean), os = k ? f.opts[k].filter(o => o.v !== "") : [];
+    const o = os.find(o => o.v === String(s.target)) || os.find(o => { const p = o.t.split(/\s+-\s+/); return p.length === want.length && p.every((x, i) => prodIs(x, want[i])); });
+    if (!o) { mark(s, "failed", `no “${want.join(" - ") || "?"}” among the production orders`); oops(run); return; }
+    const res = await submit(f, {[k]: o.v}, F.html); delete BOT.forms[link.url];
+    settle(run, s, res, 0, `made in this order: ${o.t}`);
+  };
+
+  /* e-commerce (Web Market): buy = a listing by its number, all of it (the game sells the whole listing), only when its product,
+     amount and price match the plan's (never over the plan's price: some listings ask 99,999,999), to the warehouse or a city's
+     store (dest). Sell = our own "+ Post" listing (two screens: sell + product, then amount, price, days to ship, once or until
+     paused) at the product's price in our shops: selling prices are locked, so a plan's price is never typed */
+  const destPick = (os, want) => {   // "warehouse" (the only one) or a warehouse's name, else a city's store
+    const list = os.filter(o => o.v !== ""), wh = list.filter(o => /warehouse/i.test(o.t)), w = String(want || "").trim();
+    if (!w || /^(wh|whs|warehouse)$/i.test(w)) return wh.length === 1 ? wh[0] : null;
+    return pick1(/warehouse/i.test(w) ? wh : list.filter(o => !/warehouse/i.test(o.t)), w, o => placeOf(o.t));
+  };
+  const shopPrice = name => {   // the price on the shelves (the most common one across the stores)
+    const X = dash(), st = (X.stores || []).length ? X.stores : D.stores || [], ps = st.flatMap(x => x.items || []).filter(it => prodIs(it.name, name) && it.price > 0).map(it => it.price), c = {};
+    for (const p of ps) c[p] = (c[p] || 0) + 1;
+    const top = Object.entries(c).sort((a, b) => b[1] - a[1] || b[0] - a[0])[0]; return top ? +top[0] : null;
+  };
+  const sendForm = async (f, set, before) => {   // one form, no confirm step: {h} = the game's answer, else the outcome
+    for (const k in set) if (!f.has(k)) return {err: `the form has no ${k} box`};
+    if (!BOT.on || stopped) return {skip: "the bot was stopped", wait: true};
+    if (BOT.run && today() !== BOT.run.day) return {skip: "the day ended first", wait: true};
+    let h; try { h = await post(f.action, fill(f, set)); } catch (e) { return {err: `no clear answer from the game (${e.message}): check whether it went through`, unsure: true}; }
+    return verdict(h, before) || {h};
+  };
+  const ecomRun = async (run, list) => {
+    let rows = null;
+    for (const s of list) {
+      if (!live(run.day)) return;
+      clock(run, s);
+      if (s.act === "sell") { await ecomSell(run, s); continue; }
+      rows = rows || await readWeb(false);   // fresh: the listings go fast
+      rows = await ecomBuy(run, s, rows);
+    }
+  };
+  const ecomBuy = async (run, s, rows) => {   // the listings as they are after it
+    const L = rows.find(x => String(x.id) === s.offer), cap = s.unitPriceMax ?? s.price ?? s.unitPrice, lo = s.qtyMin ?? 1, hi = s.qtyMax ?? s.qty;
+    const no = !s.offer ? "the plan gives no listing number" : !L ? `listing ${s.offer} isn't on the Web Market now` : !L.url || !/TOBUY/i.test(L.cmd || "") ? `listing ${s.offer} has no We buy link`
+      : s.product && !prodIs(L.product, s.product) ? `listing ${s.offer} is ${L.product}, the plan says ${s.product}` : L.qty == null || L.price == null ? `can't read listing ${s.offer}'s amount or price`
+      : hi == null ? "the plan gives no amount" : L.qty !== s.qty && !(L.qty >= lo && L.qty <= hi) ? `listing ${s.offer} has ${n(L.qty)}, the plan says ${n(s.qty ?? hi)}`
+      : cap == null ? "the plan gives no price for it" : L.price > cap + 1e-9 ? `listing ${s.offer} asks ${L.price} a unit, the plan allows up to ${cap}` : "";
+    if (no) { mark(s, "skipped", no); return rows; }
+    const cost = Math.round(L.price*L.qty*100)/100, why = refuse(run, s, cost); if (why) { mark(s, "skipped", why); return rows; }
+    const F = await formAt(L.url, true), f = F.f, dk = destOf(f) || lcKey(f), prc = num(arg(f.action, "prc"));
+    if (!/TOBUY/i.test(cmdOf(f)) || !new RegExp(`[?&]id=${reEsc(L.id)}(&|$)`).test(f.action)) { mark(s, "failed", "an unexpected screen came up after We buy, so nothing was sent"); oops(run); return rows; }
+    if (prc != null && Math.abs(prc - L.price) > 0.005) { mark(s, "skipped", `listing ${L.id}'s price is now ${prc}`); return rows; }
+    const dest = dk && destPick(f.opts[dk] || [], s.where || "warehouse");
+    if (!dest) { mark(s, "failed", `no single “${s.where || "warehouse"}” among the buy form's destinations`); oops(run); return rows; }
+    Object.assign(s, {qtyDone: L.qty, priceDone: L.price, amount: cost, orderId: L.id});
+    let res = await submit(f, {[dk]: dest.v}, F.html);
+    if (res.ok && !BOT.dry) { const again = await readWeb(false).catch(() => null); if (again) { rows = again; if (again.some(x => String(x.id) === L.id)) res = {err: `listing ${L.id} is still on the Web Market after the buy: check it in the game`, unsure: true}; } }
+    settle(run, s, res, cost, `listing ${L.id}: ${n(L.qty)} ${L.product} at ${L.price} from ${L.seller || "?"}, to ${placeOf(dest.t)}`);
+    return rows;
+  };
+  const ecomSell = async (run, s) => {
+    const prod = s.product, price = prod ? shopPrice(prod) : null, have = (D.warehouses || []).length ? whStock(prod) : null;
+    let qty = Math.floor(s.qty ?? s.qtyMax ?? 0);
+    if (have != null && have < qty && have >= (s.qtyMin ?? qty)) qty = Math.floor(have);
+    const no = !prod ? "the plan doesn't say which product" : price == null ? `no shop price for ${prod} on the dashboard to copy (selling prices are locked)` : !(qty > 0) ? "the plan gives no amount"
+      : have != null && have < qty ? `only ${n(have)} ${prod} in the warehouses` : "";
+    if (no) { mark(s, "skipped", no); return; }
+    if (!WEB.post && $id("MENU2_web1")) await readWeb(false);
+    if (!WEB.post) { mark(s, "failed", "no + Post link on the Web Market"); oops(run); return; }
+    const F = await formAt(WEB.post), f1 = F.f, bk = Object.keys(f1.opts).find(k => f1.opts[k].some(o => /post to sell/i.test(o.t))), pk = Object.keys(f1.opts).find(k => k !== bk && pick1(f1.opts[k].filter(o => o.v), prod, o => o.t));
+    const sell = bk && f1.opts[bk].find(o => /post to sell/i.test(o.t)), po = pk && pick1(f1.opts[pk].filter(o => o.v), prod, o => o.t);
+    if (!sell || !po) { mark(s, "failed", !sell ? "no Post to Sell choice on the post form" : `no ${prod} on the post form`); oops(run); return; }
+    const days = String(Math.max(1, Math.round(s.days ?? 2))), type = s.repeat ? "REP" : "ONE", plan = s.price != null && Math.abs(s.price - price) > 0.005 ? `, not the plan's ${s.price}: prices are locked` : "";
+    const what = `${n(qty)} ${prod} at ${price} (the shop price${plan}), ${days}-day shipping, ${s.repeat ? "until paused" : "once"}`;
+    Object.assign(s, {qtyDone: qty, priceDone: price, amount: 0});
+    if (BOT.dry) { settle(run, s, {ok: true, note: "practice, not sent"}, 0, "would post " + what); return; }
+    const r1 = await sendForm(f1, {[bk]: sell.v, [pk]: po.v}, F.html); delete BOT.forms[WEB.post];
+    if (!r1.h) { settle(run, s, r1, 0, what); return; }
+    const f2 = formOf(r1.h);
+    if (!f2 || cmdOf(f2) !== cmdOf(f1) || !f2.has("qnt") || !f2.has("PRC____")) { s.unsure = true; mark(s, "failed", "the post's second screen isn't as the bot knows it: check the Web Market in the game"); oops(run); return; }
+    const set = {qnt: String(qty), PRC____: String(price)};
+    if (f2.has("VD__DVT")) set.VD__DVT = days;
+    if (f2.has("TPE____")) { if (!(f2.opts.TPE____ || []).some(o => o.v === type)) { mark(s, "failed", `no ${type} choice on the post form`); oops(run); return; } set.TPE____ = type; }
+    let r2 = await sendForm(f2, set, r1.h);
+    if (r2.h) { const c = formOf(r2.h); if (c && c.ok && cmdOf(c) === cmdOf(f1) && !sameForm(c, f2) && !sameForm(c, f1))   // a confirm screen: only a plain one is answered
+      r2 = Object.keys(c.types).some(k => /^(text|number|tel)$/.test(c.types[k])) ? {err: "the game asked for more after the post: check the Web Market in the game", unsure: true} : await sendForm(c, {}, r2.h); }
+    if (settle(run, s, r2.h ? {ok: true} : r2, 0, "posted " + what) || s.unsure) { mem.webPosted = true; save(); }   // its buyers' orders get shipped from now on
+    if (r2.h) await quiet(() => readWeb(false));
+  };
+  const priceLocked = async (run, list) => list.forEach(s => mark(s, "skipped", "selling prices are locked: the bot never changes them"));
 
   /* shop / warehouse space: the location's Rental Manage form, rent<ac> = the total area wanted (whole steps of 50 / 500 m²), terms<ac>.
      A rent step only adds space and a release step only gives it back (down to the plan's area, never to 0) */
@@ -992,9 +1367,8 @@
     }
     run.sec.marketing = BOT.dry ? "practice" : "checked on the forms";
   };
-  const notMapped = async (run, list) => list.forEach(s => mark(s, "skipped", `${secName(s.sec).toLowerCase()} aren't mapped yet: do it in the game`));
-  const RUN = {b2b: b2bRun, rent_shop: rentRun("rent_shop"), rent_wh: rentRun("rent_wh"), machine: notMapped, buy_raw: buyRun("buy_raw"), buy_store: buyRun("buy_store"),
-    buy_wh_goods: buyRun("buy_wh_goods"), marketing: mktRun, price: notMapped};
+  const RUN = {b2b: b2bRun, rent_shop: rentRun("rent_shop"), rent_wh: rentRun("rent_wh"), machine: machineRun, buy_raw: buyRun("buy_raw"), buy_store: buyRun("buy_store"),
+    buy_wh_goods: buyRun("buy_wh_goods"), marketing: mktRun, ecom: ecomRun, price: priceLocked};
 
   /* after the orders of a section: does the dashboard cash show them? A short look only, and a note either way: with cash on
      delivery the game may take the money when the goods arrive, so an unmoved cash line doesn't stop the bot */
@@ -1037,7 +1411,8 @@
       for (const s of steps) {
         if (rec.tried.has(s.id)) { Object.assign(s, {state: "skipped", why: rec.done.has(s.id) ? "done earlier today" : "tried earlier today"}); if (!BOT.dry && rec.reports[s.id]) toCalc(rec.reports[s.id]); }   // its report again, in case it was lost (booked once)
         else if (!RUN[s.sec]) mark(s, "skipped", `the bot doesn't know “${s.section || "?"}” steps`);
-        else if (ACTS[s.sec] && !ACTS[s.sec].includes(s.act)) mark(s, "skipped", `the bot doesn't know “${s.act || "?"}” for ${secName(s.sec).toLowerCase()}`);
+        else if (ACTS[s.sec] && !ACTS[s.sec].includes(s.act)) mark(s, "skipped", s.sec === "machine" && /^(set|switch|pause)$/.test(s.act) ? "setting what a machine makes isn't mapped yet (no game with a machine seen so far): do it in the game"
+          : `the bot doesn't know “${s.act || "?"}” for ${secName(s.sec).toLowerCase()}`);
         else if (only && !s.must) mark(s, "skipped", plan.rescue === true ? "cash is short today: only the must-do steps" : "the plan's own checks didn't all pass: only the must-do steps");
       }
     }
@@ -1062,6 +1437,10 @@
       const why = !BOT.on || stopped ? "the bot was stopped" : today() !== day ? "the day ended first" : "the section stopped after an error";
       for (const s of list) if (!s.state || s.state === "running") mark(s, "skipped", why, false);
       if (BUY[part] && !BOT.dry) await verify(run, part, before);
+    }
+    if (!run.stale && live(day)) {   // then the won orders go out, so no late penalty
+      botSay(`Day ${day}: shipping B2B orders…`);
+      try { await autoShip(run, rec); } catch (e) { for (const s of steps) if (s.state === "running") { s.unsure = true; mark(s, "failed", e.message); } run.notes.push("Shipping: " + e.message); log("Bot shipping: " + e.message); }
     }
     for (const s of steps) {
       if (!s.state) mark(s, "skipped", run.stale ? "waiting for a plan that matches the game" : today() !== day ? "the day ended first" : "the bot was stopped", false);
@@ -1095,7 +1474,7 @@
     checkExpect(); BOT.prepDay = day; BOT.prepping = false; paint();
   };
   const botSay = m => { if (BOT.say !== m) { BOT.say = m; paint(); } };
-  const canRun = s => !!RUN[s.sec] && !!ACTS[s.sec] && ACTS[s.sec].includes(s.act);   // machines, prices and unknown steps never start another pass
+  const canRun = s => !!RUN[s.sec] && !!ACTS[s.sec] && ACTS[s.sec].includes(s.act);   // price and unknown steps never start another pass
   const ask = () => { if (link.state === "linked" && Date.now() - BOT.askAt > 5000) { BOT.askAt = Date.now(); toCalc({ff: "getPlan"}); } };   // a plan now, not after the next update
   const botLoop = async () => {
     let readyDay = 0, readyAt = 0, prep = null, oldAt = 0;
@@ -1167,8 +1546,25 @@
         if (!boxes.length) throw new Error("no store boxes on the marketing form");
         return `${ags.length} media agenc${ags.length > 1 ? "ies" : "y"}, ${boxes.length} store boxes`;
       });
-      await tryRow("B2B deals", async () => { const c = offerCards(dom(await page("MENU2_B2Bincm"))).length; return `${c} offer${c === 1 ? "" : "s"} on the list (the bid and accept screens are still unseen)`; });
-      row("Machines, prices", false, "not mapped yet: the bot skips these steps");
+      await tryRow("B2B deals", async () => { const c = offerCards(dom(await page("MENU2_B2Bincm"))).length; return `${c} offer${c === 1 ? "" : "s"} on the list`; });
+      await tryRow("B2B sales orders", async () => {
+        if (!$id("MENU2_B2Bsoxx")) throw new Error("no B2B Sales Order menu in this game");
+        await readOrders(false); const os = Object.values(BIDS.rows).map(fin).filter(r => r.so), won = os.filter(r => r.result === "won"), go = won.filter(r => r.allocUrl);
+        return `${os.length} orders kept (${won.length} won, ${go.length} to ship), every team's bids read${BIDS.team ? `, our team is ${BIDS.team}` : ""}${BIDS.full ? "" : "; the older pages are read between days"}`;
+      });
+      await tryRow("Machines", async () => {
+        if (!$id("MENU2_PRDbuymach")) throw new Error("no Buy Machine menu in this game");
+        const ts = machineTypes(await pageAt("MENU2_PRDbuymach", true)); if (!ts.length) throw new Error("no machines with a buy link on the Buy Machine page");
+        const f = (await formAt(ts[0].url, true)).f, lk = lcKey(f); if (!lk) throw new Error("the buy form has no warehouse list");
+        return `${ts.map(t => `${t.name} ${n(t.price)} (${n(t.cap)}/day, ${n(t.m2)} m²)`).join(", ")}; buy form ready (${f.opts[lk].filter(o => o.v !== "").map(o => o.t).join(", ")})`;
+      });
+      await tryRow("E-commerce", async () => {
+        if (!$id("MENU2_web1")) throw new Error("no Web Market menu in this game");
+        const rows = await readWeb(false); if (!WEB.post) throw new Error("no + Post link on the Web Market");
+        const f = (await formAt(WEB.post, true)).f; if (!Object.values(f.opts).some(os => os.some(o => /post to sell/i.test(o.t)))) throw new Error("no Post to Sell choice on the post form");
+        return `${rows.length} listing${rows.length === 1 ? "" : "s"} for sale, post form ready`;
+      });
+      row("Prices", true, "locked: the bot never changes a selling price");
       row("Calculator", link.state === "linked", link.state === "linked" ? "linked" : CALC ? "not linked yet: Start opens it" : "not linked: open the game with Go live in the calculator");
     } finally { BOT.checking = false; BOT.checkAt = Date.now(); paint(); }
   };
@@ -1341,7 +1737,8 @@
     busy = ""; paint();
   };
   async function next(){   // false: nothing to read right now
-    if (newGame) { newGame = false; mem = mem.gapFloor ? {gapFloor: mem.gapFloor} : {}; save(); D = null; ready = false; dayRead = 0; sentBody = lastSig = ""; b2bSeries = salesWait = null; stale = ""; lap = {day: 0}; log("A new game: starting over."); }
+    if (newGame) { newGame = false; mem = mem.gapFloor ? {gapFloor: mem.gapFloor} : {}; save(); D = null; ready = false; dayRead = 0; sentBody = lastSig = ""; b2bSeries = salesWait = null; stale = ""; lap = {day: 0};
+      BIDS = {rows: {}, team: ""}; bidsSave(); WEB.rows = []; WEB.post = null; log("A new game: starting over."); }
     if (!seenDay) return false;   // the day counter isn't on screen
     if (!mem.setup || wantSetup) {
       if (!wantSetup && Date.now() - setupFailAt < 60000) return false;
@@ -1366,7 +1763,7 @@
     }
     if (!botBusy && Date.now() - lastSlow > 20000 && (!dayLen || Date.now() - dayAt < dayLen/2)) {   // early in a day, far from the next one: rents and forecasts stay fresh too
       lastSlow = Date.now();
-      const k = Object.keys(SLOW)[slowNext++ % 4];
+      const ks = Object.keys(SLOW), k = ks[slowNext++ % ks.length];
       await run(async () => { await quiet(SLOW[k]); deliver(); });
       return true;
     }
@@ -1416,7 +1813,7 @@
     for (const w of waits) w.go(); waits.clear();
     host?.remove(); host = null; if (window.__ff && window.__ff.timer === timer) delete window.__ff;
   }
-  window.__ff = {timer, stop, read: () => { wantFull = true; }, data: () => D, bot: BOT, plan: p => takePlan(p, "pasted")};
+  window.__ff = {timer, stop, read: () => { wantFull = true; }, data: () => D, bot: BOT, plan: p => takePlan(p, "pasted"), orders: async () => { await readOrders(true); if ($id("MENU2_web1")) await readWeb(true); }};   // orders: read the order lists now (else between days)
   if (window.opener) hello();
   if (self.origin === "null") msg = "This tab was opened in a sandbox, so it can't read the game. Open your game normally, run the reader there and use Copy data.";
   paint();
