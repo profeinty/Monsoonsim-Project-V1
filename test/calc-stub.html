@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><title>calc stub</title></head><body><p id="s">stub calculator</p><script>
+// Answers the game tab that opened it, like the FF calculator would: ack, a plan after data / botHello / getPlan, done steps left out.
+window.got = []; const done = new Set(); let last = null;
+const plan = d => ({ff: "plan", app: "ffcalc", v: 1, mode: "12i", source: "game", day: d.day, planId: "stub-d" + d.day, reserve: 100000,
+  verify: {day: d.day, cash: d.cash, tol: 20000, cashMin: 300000}, budgets: {b2b: 0, machine: 0, buy_store: 100000, marketing: 20000}, floors: {Americano: 7.5},
+  steps: [
+    {id: `d${d.day}:b2b:accept:12`, seq: 1, section: "b2b", action: "accept", target: "12", product: "Americano", qty: 3000, price: 14, floor: 7.5, qtyMax: 5000, cost: 0},
+    {id: `d${d.day}:buy:Machine A`, seq: 2, section: "machine", action: "buy", target: "Machine A", qty: 1, cost: 0},
+    {id: `d${d.day}:vendor:Hamburg:Bubble Milk Tea`, seq: 3, section: "buy_store", action: "buy", target: "Hamburg", product: "Bubble Milk Tea", qty: 3000, qtyMin: 2000, qtyMax: 3500, unitPrice: 16, unitPriceMax: 16.3, cost: 48000, must: true},
+    {id: `d${d.day}:mkt:Cologne:MA`, seq: 4, section: "marketing", action: "set", target: "Cologne", price: 2500, agency: "MA", cost: 2500}].filter(s => !done.has(s.id))});
+addEventListener("message", e => {
+  if (!e.data || e.source !== window.opener) return;
+  got.push(e.data);
+  const reply = m => e.source.postMessage(m, "*"), ff = e.data.ff;
+  if (ff === "hello" || ff === "data") reply({ff: "ack", app: "ffcalc", mode: "12i", ok: true});
+  if (ff === "data") last = e.data.data;
+  if (ff === "step" && e.data.status === "done") done.add(e.data.id);
+  if ((ff === "data" || ff === "botHello" || ff === "getPlan") && last) reply(plan(last));
+});
+</script></body></html>
