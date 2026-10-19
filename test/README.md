@@ -10,4 +10,4 @@ Fail modes on the server: `?fail=<CMD>` (the game refuses), `COD` (cash on deliv
 
 Cases: A full plan run for real, B practice run (nothing sent), C screen check, D Start opens the calculator (`calc-stub.html`) and runs its plan, E the game refuses an order, F cash on delivery, G plan doesn't match the game's cash, H release, shrink, vendor price and B2B limits, I below the bulk lot price, J lost answer counted as bought, M reader loaded again the same day sends nothing twice, N Run by itself starts the bot with no click, P bid history with every team's price (Load More), Q shipping won and web orders exactly as the game's page does, Q2 practice and autoShip off ship nothing, R machines fit the floor and the budget, R2 production and machine status, S Web Market buys and our own post at the shop price.
 
-Result for reader v9: all CHECKS checks pass.
+Result for reader v9: all 120 checks pass; a 15-step day takes about 26 s.
