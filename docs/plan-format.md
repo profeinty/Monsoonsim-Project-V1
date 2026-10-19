@@ -1,6 +1,6 @@
 # FF calculator → bot: the plan message (v1)
 
-The calculator (calc/index.html, v35) sends this to the game tab; the bot (reader.js) follows it and reports back. Every quantity, price and budget comes from the plan; nothing is a fixed number in the bot. Sample: `plan-sample.json` next to this file.
+The calculator (calc/index.html, v36) sends this to the game tab; the bot (reader.js) follows it and reports back. Every quantity, price and budget comes from the plan; nothing is a fixed number in the bot. Sample: `plan-sample.json` next to this file.
 
 ## Messages
 
@@ -20,6 +20,8 @@ Data fields the calculator uses when the reader sends them: `prep` (true in the 
 
 v34 also reads `b2bBids` (or `b2bHistory`): every bid we took part in, from the B2B sales orders, as `[{id, product, qty, kind:"bid"|"fixed", maxBid, minBidders, postDay, resultDay, due, ourBid, result:"won"|"lost"|"void", winPrice, winner, bids:[{team, price, us}]}]` (the format of `game-notes/b2b-bids-60day.json`). The calculator keeps the last 400 and learns from them how low the other teams bid. Void bids (too few bidders) are left out.
 
+Reader v9 sends (v36 reads all of these): `b2bBids` (last 300, newest first; `result` won, lost, void = cancelled with no winner, cancelled = we won it and then it was cancelled, open, gone = a deal another team took; `so: null` for offers with no sales order yet; a tie is "lost" unless the game marks us WINNER), `b2bOrders` (sent only once the whole sales order list is read; only won rows, minus ones delivered more than 10 days ago; `{id: SO, offer, product, qty, each, due, allocated (units, or qty once fully allocated), delivered (bool), deliverDay, status, penalty}`), `team` (our name in the bid lists), `warehouses[].used`, `machineTypes`, `production`, `ownMachines[].status` (making, noRaw, idle, unknown), `.today` (units on the newest day of the Daily Production table) and `.day`, and `web: {day, listings: [{id, kind, product, price, qty, days, seller}]}` (`pos` and `sos` only on the between-days deep read). The calculator buys only from sellers' listings (`kind` sell / WTS, or no kind).
+
 v35 also reads: `b2bOrders[].status` (Cancelled / void → dropped, owed to no one; Completed or a `deliverDay`/`deliveredDay` → delivered), `b2bOrders[].allocated` / `.delivered` (units already allocated or delivered have left the warehouse: only the rest is owed; all of it → delivered), an order whose `b2bBids` row (matched by `so`, else `offer`) has a result other than "won" (a bid still waiting, lost, void) → not an order, `machineTypes` (used when `machines` is missing), `production.perDay` (machine output % = units made on the last full day ÷ capacity of the machines that made something, used when the team leaves "Machine output %" blank; under 50% is ignored; with no table, `ownMachines[].today` of machines with status "making"), and `web.listings: [{id, product, price, qty, days, seller}]` (Web Market listings; ours are the ones whose seller is `team`, else "FF").
 
 ## Top level
@@ -36,6 +38,15 @@ v35 also reads: `b2bOrders[].status` (Cancelled / void → dropped, owed to no o
 - Also: `b2bPayWait`, `b2bMoneyBackDays`, `b2b.products` (`capQty` = most we can deliver by the due day), `caps` (the calculator's own section caps), `cash` (low point in the next days), `cutoffs`, `next` (the next 3 days, in case a plan is late), `replanOn`, `checks`, `timeline`, `limits` (`botSec`, `safeTargetPct` 90, `errorBudgetPct` 10, `maxPlanAgeSec` 90), `estSecNow`.
 
 B2B and stock rules behind the numbers: `b2b.products[].capQty` already takes off every order won and not delivered yet; `buy_wh_goods` only buys what the warehouse (and what's on the way) doesn't already hold; no `buy_raw` after `cutoffs.lastRawPO` and no `buy_wh_goods` after `cutoffs.lastB2BAcceptVendor`; a new store is rented big enough for the stock that lands in it.
+
+## What the bot does with them (reader v9)
+
+- **B2B shipping**: a `b2b` step with action `ship` {target: SO (or its offer id), product?, qty? (at most this many), partial?: false, fromStores?: true}. Rules come from `plan.rules` or `plan.b2b.rules`: `autoShip` (on by default), `shipFromStores` (false), `partialShip` (on when the page allows it), `maxShipsPerDay` (4, over all passes of a day), `shipWeb` (on). Auto shipping runs after the steps, web orders first, then the earliest due, and never ships an order a plan ship step covers that day. Failed shipments count toward the 2-in-a-row stop. The calculator sends no ship steps yet: it leaves shipping to `autoShip`.
+- **Machine buy** {target: type name, qty, where: warehouse, unitPriceMax?, cost} within `budgets.machine`: one machine per submit, only while they fit on the warehouse floor; the step is skipped when the free floor space can't be read (`rules.machineSpaceCheck: false` turns that check off). **Priority** {order: [product names]} (or target "3,1,2"). set / switch / pause are skipped until those forms are mapped.
+- **Web Market buy** {target: listing id, product, qty (or qtyMin..qtyMax), price or unitPriceMax, dest "warehouse" or a store's city, cost} within `budgets.ecom`; it checks the listing is still there at that price.
+- **Web Market sell** {product, qty (qtyMin), days (default 2), repeat}: the price typed is ALWAYS the shop price (the most common shelf price). `priceRule: "plan"` is not followed until the team says so in the bot thread. qty is capped by today's warehouse stock.
+- **Prices**: `price` steps are skipped, and the reader refuses any request whose command matches PRC or PRICE.
+- **Bids**: only on an offer whose qty is at most the step's `qtyMax`.
 
 ## A step
 

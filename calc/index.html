@@ -3,7 +3,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<!-- FF calculator v35 (web) -->
+<!-- FF calculator v36 (web) -->
 <style>
 /* Layout: brand bar + game-data strip on top. Wide screens: inputs as a sticky tabbed sidebar (left),
    today's plan as the main column (right) that the page scrolls. Phones: the plan comes first. */
@@ -1769,9 +1769,9 @@ function bidModel(S, day){
     const mx = n(h.maxBid); if (!(mx > 0) || h.kind === "fixed" || h.result === "void" || h.result === "open") continue;
     const w = Math.pow(0.5, Math.max(0, day - (n(h.day) || day))/10);   // a bid 10 days old counts half: teams change how they bid
     const rivals = (Array.isArray(h.bids) ? h.bids : []).filter(b => b && !b.us && n(b.price) > 0);
-    if (rivals.length) { const lo = rivals.reduce((a, b) => n(b.price) < n(a.price) ? b : a); obs.push({p: h.product, t: "x", r: n(lo.price)/mx, w}); for (const b of rivals) T(String(b.team || ""), n(b.price)/mx, b === lo && h.result !== "won"); }
+    if (rivals.length) { const lo = rivals.reduce((a, b) => n(b.price) < n(a.price) ? b : a); obs.push({p: h.product, t: "x", r: n(lo.price)/mx, w}); for (const b of rivals) T(String(b.team || ""), n(b.price)/mx, b === lo && h.result !== "won" && h.result !== "cancelled"); }
     else if (n(h.winPrice) > 0 && h.result !== "won") { obs.push({p: h.product, t: "x", r: n(h.winPrice)/mx, w}); T(String(h.winner || ""), n(h.winPrice)/mx, true); }
-    else if (h.result === "won" && n(h.ourBid) > 0) obs.push({p: h.product, t: "gt", r: n(h.ourBid)/mx, w});
+    else if ((h.result === "won" || h.result === "cancelled") && n(h.ourBid) > 0) obs.push({p: h.product, t: "gt", r: n(h.ourBid)/mx, w});
     else if (h.result === "lost" && n(h.ourBid) > 0) obs.push({p: h.product, t: "lt", r: n(h.ourBid)/mx, w});
   }
   const enough = L => L.reduce((s, o) => s + o.w, 0) >= 2.5;
@@ -1811,7 +1811,7 @@ const EST = {ecomBuy: 3, ecomSell: 4, setPriority: 2, check: 1, b2bDeliver: 1.5,
    for the warehouse's B2B stock, when it's at least 3% under what the vendor charges for today's B2B order and lands before the
    B2B due day. Today's vendor order stays whole (its lots and tier price); a done buy is stock on the way, so the next plan's
    vendor order is that much smaller. */
-const webOf = S => { const W = S.web || {}; return {L: Array.isArray(W.listings) ? W.listings : [], us: String(W.us || "FF").trim().toLowerCase()}; };
+const webOf = S => { const W = S.web || {}; return {L: (Array.isArray(W.listings) ? W.listings : []).filter(l => !l.kind || /sell|wts|^s$/i.test(String(l.kind))), us: String(W.us || "FF").trim().toLowerCase()}; };   // sellers' listings (a "want to buy" listing is a buyer)
 function ecomOf(S, R){
   const {L, us} = webOf(S), ours = l => String(l.seller || "").trim().toLowerCase() === us;
   return S.P.map((p, j) => {
@@ -2189,7 +2189,7 @@ function bookOf(b, D, day){
       const id = String(h.id).slice(0, 40), was = m.get(id) || {}, num = v => v == null || v === "" || !isFinite(+v) ? undefined : +v;
       m.set(id, {...was, id, product: String(h.product).slice(0, 60), qty: num(h.qty) ?? was.qty, kind: /fixed/i.test(String(h.kind || "")) ? "fixed" : "bid", maxBid: num(h.maxBid ?? h.max) ?? was.maxBid,
         each: num(h.each) ?? was.each, day: num(h.resultDay ?? h.closeDay ?? h.postDay) ?? was.day ?? day, ourBid: num(h.ourBid) ?? was.ourBid,
-        result: ["won", "lost", "void", "gone", "open"].includes(h.result) ? h.result : was.result || "", winPrice: num(h.winPrice) ?? was.winPrice,
+        result: ["won", "lost", "void", "cancelled", "gone", "open"].includes(h.result) ? h.result : was.result || "", winPrice: num(h.winPrice) ?? was.winPrice,
         winner: h.winner != null ? String(h.winner).slice(0, 40) : was.winner, bids: Array.isArray(h.bids) ? h.bids.slice(0, 20).map(b => ({team: String(b && b.team || "").slice(0, 40), price: n(b && b.price), us: !!(b && b.us)})) : was.bids}); }
     B.bids = [...m.values()].sort((a, b) => n(a.day) - n(b.day)).slice(-400); }
   if (Array.isArray(D.inbound)) B.inbound = D.inbound.map(x => ({dest: x.dest === "wh" ? "wh" : "store", city: String(x.city || ""), item: String(x.item || x.product || ""), qty: n(x.qty), arriveDay: n(x.arriveDay)}));
@@ -2231,7 +2231,7 @@ function applyGame(D){
     R: raws.map(r => ({name:r.name, cost:rawCost[r.name] ?? "", wh:whQty(r.name), dim:r.dim || typed[r.name]?.dim || ""})),
     M: (D.machines && D.machines.length ? D.machines : D.machineTypes || []).map(m => ({name:m.name, price:m.price, cap:m.cap, m2:m.m2, staff:(m.staff || 1)*(D.salary || 350)})),
     web: D.web && Array.isArray(D.web.listings) ? {us: String(D.team || D.teamName || S.web?.us || "FF").slice(0, 40), listings: D.web.listings.filter(l => l && l.id != null && l.product).slice(0, 200)
-      .map(l => ({id: String(l.id).slice(0, 40), product: String(l.product).slice(0, 60), price: n(l.price), qty: n(l.qty), days: n(l.days), seller: String(l.seller || "").slice(0, 40)}))} : S.web || null,
+      .map(l => ({id: String(l.id).slice(0, 40), kind: String(l.kind || "").slice(0, 20), product: String(l.product).slice(0, 60), price: n(l.price), qty: n(l.qty), days: n(l.days), seller: String(l.seller || "").slice(0, 40)}))} : S.web || null,
     own: [], C: [], soldFrom: D.salesFrom || "", book: bookOf(S.book, D, D.day || 1),
     offers: Array.isArray(D.b2bOffers) ? D.b2bOffers.filter(o => o && o.id != null && o.product).slice(0, 200).map(o => ({id: String(o.id).slice(0, 40), product: String(o.product), qty: n(o.qty),
       price: n(o.price), maxBid: n(o.maxBid ?? o.max), kind: /bid/i.test(String(o.kind ?? o.type ?? "")) ? "bid" : "fixed", due: o.due != null ? n(o.due) : null, open: o.open !== false && !/taken|gone|closed|done|in$/i.test(String(o.state || ""))})) : []
