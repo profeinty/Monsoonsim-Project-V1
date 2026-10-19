@@ -45,11 +45,11 @@ const form = (q, inner, btn = "dbutton") => `<form method="post" action="ms_sure
 const FORM = {
   SPACE_MANAGE: q => { const ac = q.get("ac"), s = S.shops[ac] || S.whs[ac];
     return form(q, `<p>Area needed (m2) <input type="text" name="rent${ac}" value="${s.area}"> <button type="button">+</button></p><p>Terms <select name="terms${ac}"><option value="1">Daily (no discount)</option><option value="7">7-Day (20% discount)</option><option value="30" selected>30-Day (60% discount)</option></select></p>`); },
-  BUY_FG: q => form(q, `<p>Destination <select name="destination_rtl"><option value="">Destination</option><option value="11">Berlin Retail</option><option value="13">Hamburg Retail</option><option value="17">Cologne Retail</option></select></p>
+  BUY_FG: q => form(q, `<p>Destination <select name="destination_rtl"><option value="">Destination</option><option value="11">Ship to : Berlin Retail</option><option value="13">Ship to : Hamburg Retail</option><option value="17">Ship to : Cologne Retail</option></select></p>
     ${["P1", "P2", "P3"].map(k => `<p><select name="${k}">${opts(k)}</select></p>`).join("")}<p><select name="prtype"><option value="NormalC">Immediate delivery, cash on delivery</option></select></p>`, q.get("vc") === "1" ? "submit_button" : "dbutton"),
-  BUY_RM: q => form(q, `<p><select name="destination_whs"><option value="">Destination</option><option value="27">Cologne Warehouse</option><option value="26">Dusseldorf Warehouse</option></select></p>
+  BUY_RM: q => form(q, `<p><select name="destination_whs"><option value="">Destination</option><option value="27">Ship to : Cologne Warehouse</option><option value="26">Ship to : Dusseldorf Warehouse</option></select></p>
     ${["P4", "P5", "P6", "P7", "P8"].map(k => `<p><select name="${k}">${opts(k)}</select></p>`).join("")}<p><select name="prtype"><option value="NormalC">Immediate delivery</option></select></p>`),
-  INVEST_MKT: q => form(q, `<table>${Object.entries(S.mkt[q.get("ma")]).map(([id, v]) => `<tr><td>${S.shops[id].name}</td><td><input type="text" name="invest${id}" value="${v}"></td></tr>`).join("")}</table><p>Amounts in EUR per day. Spending cannot be refunded.</p>`),
+  INVEST_MKT: q => form(q, `<table>${Object.entries(S.mkt[q.get("ma")]).map(([id, v]) => `<tr><td><button type="button">-</button> <input type="text" name="invest${id}" value="${v}"> <button type="button">+</button></td></tr>`).join("")}</table><p>Amounts in EUR per day. Spending cannot be refunded.</p>`),
   B2B_ACCEPT: q => form(q, `<p>Accept offer ${q.get("id")}?</p><input type="hidden" name="id" value="${q.get("id")}">`),
   B2B_BID: q => form(q, `<p>Your bid price per unit <input type="text" name="bidprice" value=""></p><input type="hidden" name="id" value="${q.get("id")}">`),
 };

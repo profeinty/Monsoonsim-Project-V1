@@ -4,7 +4,7 @@
      the game setup, so it starts in seconds. It only reads, unless you start Auto-click or the Bot (each off until you start it). */
   if (window.__ff && window.__ff.stop) window.__ff.stop();
   document.getElementById("ff-reader-box")?.remove();
-  const V = 4, BUILD = "v8.2", GAP = 900, CLICK = 1500;   // the game blocks fast clicks: page reads at least GAP ms apart, clicks in Configuration CLICK ms
+  const V = 4, BUILD = "v8.3", GAP = 900, CLICK = 1500;   // the game blocks fast clicks: page reads at least GAP ms apart, clicks in Configuration CLICK ms
   const MODE = String(window.__FF_MODE || ""), TAG = MODE;   // the calculator mode the bookmark was made for (Mode 12i or Mode 14), set by loader.js
   const log = m => console.log("%c[FF] " + m, "color:#B4451C;font-weight:bold");
   const toNum = s => s == null ? null : +String(s).replace(/[^\d.]/g, "");
@@ -844,6 +844,7 @@
     return [];
   };
   const destOf = f => Object.keys(f.opts).find(k => /^destination/i.test(k));
+  const placeOf = t => String(t ?? "").replace(/^\s*(?:ship(?:ped)?\s*to|deliver(?:y)?\s*to|destination)\s*:?\s*/i, "");   // the game writes "Ship to : Dusseldorf Warehouse"
   const priceIn = (t, name) => { const m = String(t).match(new RegExp(reEsc(name) + "\\s*[:@-]?\\s*(?:EUR|€)?\\s*(\\d+(?:\\.\\d+)?)(?![\\d+]|,\\d)", "i")); return m ? +m[1] : null; };   // not "1,000+": an order size
   const vendorFor = (vs, s) => {   // the plan's vendor, else the one nearest the plan's price, else the only one
     if (s.vendor) { const k = String(s.vendor).toLowerCase(), x = vs.filter(v => String(v.key).toLowerCase() === k || norm(v.text).includes(norm(s.vendor))); return x.length === 1 ? x[0] : null; }
@@ -891,7 +892,7 @@
     }
     for (const g of groups) {
       if (!live(run.day)) return;
-      const at = F => { const dk = destOf(F.f); return {dk, dest: dk && pick1((F.f.opts[dk] || []).filter(o => o.v !== ""), g.where, o => o.t)}; };
+      const at = F => { const dk = destOf(F.f); return {dk, dest: dk && pick1((F.f.opts[dk] || []).filter(o => o.v !== ""), g.where, o => placeOf(o.t))}; };
       let F = await formAt(g.v.url); if (!at(F).dest) F = await formAt(g.v.url, true);   // a place rented since the form was read
       const f = F.f, {dk, dest} = at(F);
       if (!dest) { g.steps.forEach(s => mark(s, "failed", `no “${g.where}” among the order form's destinations`)); oops(run); continue; }
@@ -944,7 +945,7 @@
   /* marketing: one form per media agency, invest<storeId> = EUR per day for the plan's stores (split by agency as the plan says),
      the other stores as they are; the form is read back after the change */
   const storeIdOf = (name, f) => {   // from a store order form's destinations, else the words beside the marketing boxes
-    for (const c of Object.values(BOT.forms)) { const o = c.f.opts.destination_rtl, hit = o && pick1(o.filter(x => x.v !== ""), name, x => x.t); if (hit) return hit.v; }
+    for (const c of Object.values(BOT.forms)) { const o = c.f.opts.destination_rtl, hit = o && pick1(o.filter(x => x.v !== ""), name, x => placeOf(x.t)); if (hit) return hit.v; }
     const hit = f.fields.map(x => x[0]).filter(k => /^invest\d+$/i.test(k) && nm(name) && norm(f.labels[k] || "").includes(nm(name)));
     return hit.length === 1 ? hit[0].replace(/^invest/i, "") : null;
   };
@@ -1158,7 +1159,7 @@
         const f = (await formAt(vs[0].url, true)).f, dk = destOf(f), ps = Object.keys(f.opts).filter(k => /^P\d+$/i.test(k)), sizes = ps.length ? tiersOf(f, ps[0]).map(t => t.q) : [];
         if (!dk) throw new Error("the order form has no destination list");
         if (!sizes.length) throw new Error("no products with order sizes on the order form");
-        return `${vs.length} vendor${vs.length > 1 ? "s" : ""}, ${ps.length} products, ${f.opts[dk].filter(o => o.v !== "").length} destinations, sizes ${n(Math.min(...sizes))} to ${n(Math.max(...sizes))}`;
+        return `${vs.length} vendor${vs.length > 1 ? "s" : ""}, ${ps.length} products, ${f.opts[dk].filter(o => o.v !== "").length} destinations (${f.opts[dk].filter(o => o.v !== "").map(o => placeOf(o.t).replace(/\s+(retail|warehouse)$/i, "")).join(", ")}), sizes ${n(Math.min(...sizes))} to ${n(Math.max(...sizes))}`;
       });
       await tryRow("Marketing", async () => {
         const ags = blocks(await pageAt("MENU2_retail_media", true), u => /cmd=INVEST_MKT/i.test(u), u => u); if (!ags.length) throw new Error("no Set Marketing Expense link");
