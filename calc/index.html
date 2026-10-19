@@ -3,7 +3,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<!-- FF calculator v30 (web) -->
+<!-- FF calculator v31 (web) -->
 <style>
 /* Layout: brand bar + game-data strip on top. Wide screens: inputs as a sticky tabbed sidebar (left),
    today's plan as the main column (right) that the page scrolls. Phones: the plan comes first. */
@@ -1868,6 +1868,8 @@ function toPlan(S, X, mode){
   const botBudgets = {b2b: 0, rent_shop: round(sumOf("rent_shop")*tolP), rent_wh: round(sumOf("rent_wh")*tolP), machine: round(B.caps.mach.cap), buy_raw: round(B.caps.raw.cap),
     buy_store: round(B.caps.stock.cap), buy_wh_goods: round(B.caps.b2b.cap), marketing: round(sumOf("marketing")), price: 0};
   if (X.mode === "mustOnly") { botBudgets.buy_store = round(bot.filter(s => s.section === "buy_store").reduce((t, s) => t + n(s.cost), 0)*tolP); botBudgets.buy_raw = round(sumOf("buy_raw")*tolP); }
+  // what's LEFT today: a step the bot already reported done, that the game data doesn't show yet, still sits in the plan's numbers
+  for (const s of (ST.dropped || []).map(s => botStepOf(S, R, s)).filter(Boolean)) if (["machine", "buy_raw", "buy_store", "buy_wh_goods"].includes(s.section)) botBudgets[s.section] = Math.max(0, botBudgets[s.section] - round(n(s.cost)));
   // a rescue day may use the whole overdraft for the must-do stock (it earns tomorrow's cash), keeping one day of costs
   const floorNet = X.mode === "mustOnly" ? -n(g.odLimit)*clamp(n(g.odPct), 0, 100)/100 + B.runDay0 : T.hardFloor + B.keep, reserveDash = round(floorNet + n(g.odUsed));
   const core = {steps: ST.steps, budgets: botBudgets, cash: {net0: round(B.net0), spendable: round(B.spendable), keep: round(B.keep)}};
@@ -1985,7 +1987,7 @@ function applyGame(D){
     M: (D.machines || []).map(m => ({name:m.name, price:m.price, cap:m.cap, m2:m.m2, staff:(m.staff || 1)*(D.salary || 350)})),
     own: [], C: [], soldFrom: D.salesFrom || "", book: bookOf(S.book, D, D.day || 1),
     offers: Array.isArray(D.b2bOffers) ? D.b2bOffers.filter(o => o && o.id != null && o.product).slice(0, 200).map(o => ({id: String(o.id).slice(0, 40), product: String(o.product), qty: n(o.qty),
-      price: n(o.price), maxBid: n(o.maxBid ?? o.max), kind: /bid/i.test(String(o.kind ?? o.type ?? "")) ? "bid" : "fixed", due: o.due != null ? n(o.due) : null, open: o.open !== false && !/taken|gone|closed|in$/i.test(String(o.state || ""))})) : []
+      price: n(o.price), maxBid: n(o.maxBid ?? o.max), kind: /bid/i.test(String(o.kind ?? o.type ?? "")) ? "bid" : "fixed", due: o.due != null ? n(o.due) : null, open: o.open !== false && !/taken|gone|closed|done|in$/i.test(String(o.state || ""))})) : []
   };
   // the game's modules, from its menus and setup. Only a module with no sign of it anywhere counts as missing.
   if (Array.isArray(D.menus) && D.menus.length) {
