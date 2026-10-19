@@ -1,4 +1,4 @@
-# FF live reader
+# FF Tech
 
 Hosts the FF MonsoonSIM game reader so the **FF live** bookmark can load the newest version on every click.
 
