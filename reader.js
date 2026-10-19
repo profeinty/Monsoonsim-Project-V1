@@ -74,7 +74,7 @@
       .map(m => ({name: m[1].trim(), area: toNum(m[5]), used: toNum(m[4]),
         items: [...m[2].matchAll(/([^\n@]+?)\s*@\s*([\d.]+)\s*\n\s*([\d,]+)/g)].map(x => ({name: x[1].trim(), price: +x[2], qty: toNum(x[3])}))}));
     if (!X.stores.length) X.stores = boxStores();   // a screen laid out differently: read the retail boxes themselves
-    X.warehouses = [...body.matchAll(/(?:^|\n)([^\n@\d][^\n@]*)\n((?:[^\n@\d][^\n@]*\n\s*[\d,]+\s*\n)+)\s*Machines\s*\n\s*(\d+)\s*\n\s*Space utilization\s*\n?\s*\((\d+)%\)\s*([\d,]+)\s*\/\s*([\d,]+)/g)]
+    X.warehouses = [...body.matchAll(/(?:^|\n)([^\n@\d][^\n@]*)\n((?:[^\n@\d][^\n@]*\n\s*[\d,]+\s*\n)*)\s*Machines\s*\n\s*(\d+)\s*\n\s*Space utilization\s*\n?\s*\((\d+)%\)\s*([\d,]+)\s*\/\s*([\d,]+)/g)]
       .map(m => ({name: m[1].trim(), machines: +m[3], area: toNum(m[6]), used: toNum(m[5]),
         items: [...m[2].matchAll(/([^\n]+?)\s*\n\s*([\d,]+)/g)].map(x => ({name: x[1].trim(), qty: toNum(x[2])}))}));
     return X;
@@ -321,7 +321,7 @@
     }
     D.production = P; machineStatus();
   };
-  const whStock = name => (D && D.warehouses || []).reduce((t, w) => t + (w.items || []).filter(it => prodIs(it.name, name)).reduce((a, it) => a + (it.qty || 0), 0), 0);
+  const whStock = (name, ws) => (ws || D && D.warehouses || []).reduce((t, w) => t + (w.items || []).filter(it => prodIs(it.name, name)).reduce((a, it) => a + (it.qty || 0), 0), 0);
   const machineStatus = () => {
     const P = D.production, last = P && P.perDay.length ? Math.max(...P.perDay.map(x => x.day)) : null;
     for (const m of D.ownMachines || []) {
@@ -592,7 +592,7 @@
       ourBid: g(/We Bid\s*([\d.]+)/i, Number), bids, postDay: g(/Requested\s*(\d+)/i, Number), resultDay: g(/Bid Result Day\s*(\d+)/i, Number),
       allocDay: g(/Fully Allocated Day\s*(\d+)/i, Number), deliveredDay: g(/Delivered\s*(\d+)/i, Number), status: statusOf(r), allocated: al ? toNum(al[1]) : null, allocUrl: a ? a.url : null};
   };
-  const isUs = (r, b) => BIDS.team ? b.team === BIDS.team : r.ourBid != null && b.price === r.ourBid;
+  const isUs = (r, b) => BIDS.team ? b.team === BIDS.team : r.ourBid != null && b.price === r.ourBid && (r.bids || []).filter(x => x.price === r.ourBid).length === 1;   // a tie can't tell us apart
   const fin = r => {   // won / lost / void / cancelled (we won it, then it was cancelled) / open (no result yet) / gone (an offer another team took)
     if (!r.so) return {...r, result: r.result};
     const win = (r.bids || []).find(b => b.win), st = r.status || "";
@@ -618,21 +618,23 @@
     return (Object.entries(v).sort((a, b) => b[1] - a[1])[0] || [BIDS.team || ""])[0]; };   // our name: the one bidding what "We Bid" says
   const readOrders = async deep => {   // deep: the next pages too (Load More), until only finished orders it already has; picked up again if a new day comes first
     bidsFresh();
-    let h = await page("MENU2_B2Bsoxx"), pages = 0;
+    let h = await page("MENU2_B2Bsoxx"), pages = 0, url = null;
+    const open = new Set(Object.values(BIDS.rows).filter(r => r.so && !FINAL.test(r.status || "")).map(r => String(r.so)));   // orders still running: read again before stopping
     for (;;) {
       const d = dom(h); d.querySelectorAll("script,style").forEach(e => e.remove());
       let known = true, more = (d.querySelector("#loadmore") || {getAttribute: () => null}).getAttribute("href");
-      for (const r of listRows(d)) {
-        const x = parseSO(r); if (!x.so) continue;
+      const rows = listRows(d).map(parseSO).filter(x => x.so);
+      if (!rows.length) { if (deep && url) BIDS.cursor = url; break; }   // no list on this page (a slow-down or error page): not the end of the list
+      for (const x of rows) {
         const old = BIDS.rows["s" + x.so]; if (!(old && FINAL.test(old.status || "") && FINAL.test(x.status))) known = false;
-        BIDS.rows["s" + x.so] = {...old, ...x, seen: today()}; if (x.id) delete BIDS.rows["o" + x.id];
+        BIDS.rows["s" + x.so] = {...old, ...x, seen: today()}; if (x.id) delete BIDS.rows["o" + x.id]; open.delete(String(x.so));
       }
       if (!pages++ && deep && !BIDS.full && BIDS.cursor) more = BIDS.cursor;   // a long first read that stopped: on from where it was
       if (!deep) break;
       if (!more) { BIDS.full = true; BIDS.cursor = null; break; }
-      if (BIDS.full && known) break;
+      if (BIDS.full && known && !open.size) break;
       if (pages >= 25 || stopped || D.day !== dayRead || BOT.busy || BOT.prepping) { BIDS.cursor = more; break; }
-      h = await get(abs(more));
+      url = abs(more); h = await get(url);
     }
     BIDS.team = teamOf(); bidsSave(); bidsOut();
   };
@@ -844,6 +846,9 @@
     if (r.err) { s.unsure = !!r.unsure; if (s.unsure && cost) book(run, s, cost); mark(s, "failed", r.err); oops(run); return false; }
     spend(run, s, cost); if (s.amount == null && cost) s.amount = cost; mark(s, "done", r.note ? `${ok}: ${r.note}` : ok); return true;
   };
+  const pre = async (run, s, f) => {   // a step of the newer sections: what throws comes before its order goes out (submit and sendForm catch their own), so it failed and isn't unsure
+    try { await f(); } catch (e) { if (!s.state || s.state === "running") { mark(s, "failed", e.message); oops(run); } }
+  };
 
   /* the plan's checks (verify): before the steps, the game is on the plan's day with about the plan's cash (or that less what the
      bot spent today): "" or what doesn't match, and then the bot asks for a fresh plan. After the steps: a note when cash is under cashMin */
@@ -891,7 +896,7 @@
   const b2bRun = async (run, list) => {   // deals and bids first (they go fast), then shipping
     const deals = list.filter(s => s.act !== "ship"), ships = list.filter(s => s.act === "ship");
     if (deals.length) await dealRun(run, deals);
-    for (const s of ships) { if (!live(run.day)) return; clock(run, s); await shipStep(run, s); }
+    for (const s of ships) { if (!live(run.day)) return; clock(run, s); await pre(run, s, () => shipStep(run, s)); }
   };
   const dealRun = async (run, list) => {
     const h = await page("MENU2_B2Bincm"), cards = offerCards(dom(h)).map(c => ({c, o: parseOffer(c)})).filter(x => x.o.id);   // read fresh: the deals go fast
@@ -986,7 +991,7 @@
     const no = !s.offer ? "the plan gives no sales order number" : !o ? `order ${s.offer} isn't on the B2B Sales Order list` : o.result !== "won" ? `order ${o.so} is ${o.status || o.result}`
       : !o.allocUrl ? `order ${o.so} has nothing left to allocate (${o.status || "?"})` : s.product && !prodIs(o.product, s.product) ? `order ${o.so} is for ${o.product}, the plan says ${s.product}` : "";
     if (no) { mark(s, "skipped", no); return; }
-    Object.assign(s, {so: o.so, orderId: o.so, due: o.due ?? null});
+    Object.assign(s, {so: o.so, orderId: o.so, due: o.due ?? null}); if (run.rec) run.rec.shipSO.add(String(o.so));   // the plan ships it: the bot's own shipping leaves it alone today
     const r = await shipOne(run, s, o.allocUrl);
     settle(run, s, r, 0, r.qty ? shipped(s, o, r) : "");
     if (r.ok && !BOT.dry) { await quiet(() => readOrders(false)); deliver(); }
@@ -994,24 +999,25 @@
   const autoShip = async (run, rec) => {   // after the plan's steps: every won order with stock to send, the earliest due first (rules.autoShip false: off)
     const rules = rulesOf(run); if (rules.autoShip === false) return;
     const max = num(rules.maxShipsPerDay) ?? 4, stores = rules.shipFromStores === true, known = (D.warehouses || []).length > 0, out = [];
-    const planned = new Set(run.steps.filter(s => s.sec === "b2b" && s.act === "ship" && s.so).map(s => String(s.so)));
+    const planned = new Set([...rec.shipSO, ...run.steps.filter(s => s.sec === "b2b" && s.act === "ship" && !s.auto).map(s => String(s.so || (orderOf(s.offer) || {}).so || s.offer))]);   // orders a plan step ships (or skipped) today
     const todo = $id("MENU2_B2Bsoxx") ? Object.values(BIDS.rows).map(fin).filter(o => o.so && o.result === "won" && o.allocUrl && !o.deliveredDay && !planned.has(String(o.so)))
       .sort((a, b) => (a.due ?? 1e9) - (b.due ?? 1e9) || +a.so - +b.so).map(o => ({o, id: `auto:ship:${o.so}`, url: o.allocUrl, text: `ship order ${o.so}: ${o.product}, due day ${o.due ?? "?"}`})) : [];
     if (rules.shipWeb !== false && $id("MENU2_web_sos") && (mem.webPosted || ((D.web || {}).sos || []).some(w => w.toShip))) try {   // web sales orders (people who bought our web posts) too, before their short shipping time runs out
       const ws = orderRows(await page("MENU2_web_sos")).filter(w => w.allocUrl);
       todo.unshift(...ws.map(w => ({o: {so: w.id, product: w.product, qty: w.qty, due: null}, id: `auto:webship:${w.id}`, url: w.allocUrl, text: `ship web order ${w.id}${w.product ? ": " + w.product : ""}`})));
     } catch (e) { run.notes.push("Web sales orders: " + e.message); }
-    let sent = 0, fails = 0;
+    let sent = [...rec.tried].filter(id => /^auto:(web)?ship:/.test(id)).length;   // sent today, all passes
     for (const x of todo) {
-      if (!live(run.day) || sent >= max || fails >= 2) break;
+      if (!live(run.day) || sent >= max) break;
       if (rec.tried.has(x.id)) continue;
       const s = {...toStep({id: x.id, section: "b2b", action: "ship", target: x.o.so, product: x.o.product}, 9999), auto: true, so: x.o.so, orderId: x.o.so, text: x.text};
       run.steps.push(s); clock(run, s);
       if (!stores && known && x.o.product && whStock(x.o.product) <= 0) { mark(s, "skipped", `no ${x.o.product} in the warehouses yet`); continue; }
-      const r = await shipOne(run, s, x.url); sent++;
+      const r = await shipOne(run, s, x.url);
       if (r.skip) { mark(s, "skipped", r.skip); continue; }
-      if (r.err) { fails++; s.unsure = !!r.unsure; mark(s, "failed", r.err); BOT.warn = `Day ${run.day}: couldn't ship order ${x.o.so}: ${r.err}`; continue; }
-      fails = 0; BOT.fails = 0; mark(s, "done", `${BOT.dry ? "practice, not sent: " : ""}${shipped(s, {...x.o, product: s.product}, r)}`); out.push(s);
+      sent++;
+      if (r.err) { s.unsure = !!r.unsure; mark(s, "failed", r.err); BOT.warn = `Day ${run.day}: couldn't ship order ${x.o.so}: ${r.err}`; oops(run); continue; }   // counts toward the 2 in a row
+      BOT.fails = 0; mark(s, "done", `${BOT.dry ? "practice, not sent: " : ""}${shipped(s, {...x.o, product: s.product}, r)}`); out.push(s);
     }
     if (out.length && !BOT.dry && $id("MENU2_B2Bsoxx")) { await quiet(() => readOrders(false)); deliver(); }
     if (out.length) run.sec.b2b = `shipped ${out.length} order${out.length > 1 ? "s" : ""}`;
@@ -1022,18 +1028,23 @@
      dashboard's free m², with today's warehouse rent counted; rules.machineSpaceCheck false: not checked). priority = the order
      products are made in (Production Priority). What a machine makes isn't mapped yet (no game with a machine seen so far) */
   const lcKey = f => Object.keys(f.opts).find(k => /^lc$/i.test(k)) || destOf(f) || (x => x.length === 1 ? x[0] : null)(Object.keys(f.opts));
-  const whFree = (run, where) => {   // read once a day (before its first machine), less the machines bought since: the dashboard may or may not count a new one at once
+  const whFree = (run, where) => {   // read once a day (before its first machine), less the machines bought since that day: the dashboard may or may not count a new one at once. undefined: can't tell
     const X = dash(), ws = (X.warehouses || []).length ? X.warehouses : D.warehouses || [], w = where ? pick1(ws, where, x => x.name) : ws.length === 1 ? ws[0] : null;
-    if (!w || w.area == null || w.used == null) return null;
-    const k = nm(w.name), base = run.whBase = run.whBase || {};
-    if (base[k] == null) { const r = run.steps.filter(x => x.sec === "rent_wh" && x.act === "rent" && x.state === "done" && x.qtyDone > 0 && same(x.where, w.name)).pop(); base[k] = Math.max(w.area, r ? r.qtyDone : 0) - w.used; }
-    return base[k] - ((run.machineM2 || {})[k] || 0);
+    const day = run.rec || run, base = day.whBase = day.whBase || {}, k = nm(w ? w.name : where || "");
+    if (base[k] == null) {
+      const r = run.steps.filter(x => x.sec === "rent_wh" && x.act === "rent" && x.state === "done" && x.qtyDone > 0 && same(x.where, w ? w.name : where)).pop();
+      if (w && w.area != null && w.used != null) base[k] = Math.max(w.area, r ? r.qtyDone : 0) - w.used;
+      else if (!w && r) base[k] = r.qtyDone;   // a warehouse rented today, not on the dashboard yet: nothing stands in it
+      else return undefined;
+    }
+    return base[k] - ((day.machineM2 || {})[k] || 0);
   };
+  const addM2 = (run, where, m2) => { const day = run.rec || run, mk = nm(where); day.machineM2 = day.machineM2 || {}; day.machineM2[mk] = (day.machineM2[mk] || 0) + (m2 || 0); };
   const machineRun = async (run, list) => {
     for (const s of list) {
       if (!live(run.day)) return;
       clock(run, s);
-      if (s.act === "priority") await machineOrder(run, s); else await machineBuy(run, s);
+      await pre(run, s, () => s.act === "priority" ? machineOrder(run, s) : machineBuy(run, s));
       if (s.state === "failed" && !s.unsure && !BOT.on) return;
     }
   };
@@ -1049,7 +1060,8 @@
     const at = s.where ? pick1(os, s.where, o => placeOf(o.t)) : os.length === 1 ? os[0] : null;
     if (!at) { mark(s, "failed", lk ? `no single warehouse “${s.where || "?"}” on the buy form (${os.map(o => o.t).join(", ")})` : "the buy form has no warehouse list"); oops(run); return; }
     let note = "";
-    const free = rulesOf(run).machineSpaceCheck === false || !(t.m2 > 0) ? null : whFree(run, placeOf(at.t));
+    const chk = rulesOf(run).machineSpaceCheck !== false && t.m2 > 0, free = chk ? whFree(run, placeOf(at.t)) : null;
+    if (free === undefined) { mark(s, "skipped", `can't read ${placeOf(at.t)}'s free floor space on the dashboard (plan rules.machineSpaceCheck false: buy without the check)`); return; }
     if (free != null && Math.floor(free/t.m2) < count) {
       const fit = Math.max(0, Math.floor(free/t.m2));
       if (!fit) { mark(s, "skipped", `${placeOf(at.t)} has ${n(Math.round(free))} m² free, a ${t.name} needs ${n(t.m2)} m²`); return; }
@@ -1060,8 +1072,8 @@
       if (!live(run.day)) { res = {skip: BOT.on ? "the day ended" : "the bot was stopped", wait: true}; break; }
       const why = refuse(run, s, each); if (why) { res = {skip: why}; break; }
       res = await submit(f, {[lk]: at.v}, F.html);
-      if (!res.ok) { if (res.unsure) { book(run, s, each); got++; } break; }   // (no clear answer: it may have gone through, so it counts)
-      spend(run, s, each); got++; const mk = nm(placeOf(at.t)); run.machineM2 = run.machineM2 || {}; run.machineM2[mk] = (run.machineM2[mk] || 0) + (t.m2 || 0);
+      if (!res.ok) { if (res.unsure) { book(run, s, each); got++; addM2(run, placeOf(at.t), t.m2); } break; }   // (no clear answer: it may have gone through, so it counts)
+      spend(run, s, each); got++; addM2(run, placeOf(at.t), t.m2);
     }
     delete BOT.forms[t.url];
     Object.assign(s, {qtyDone: got, priceDone: each, amount: got*each});
@@ -1107,9 +1119,11 @@
     for (const s of list) {
       if (!live(run.day)) return;
       clock(run, s);
-      if (s.act === "sell") { await ecomSell(run, s); continue; }
-      rows = rows || await readWeb(false);   // fresh: the listings go fast
-      rows = await ecomBuy(run, s, rows);
+      await pre(run, s, async () => {
+        if (s.act === "sell") return ecomSell(run, s);
+        rows = rows || await readWeb(false);   // fresh: the listings go fast
+        rows = await ecomBuy(run, s, rows);
+      });
     }
   };
   const ecomBuy = async (run, s, rows) => {   // the listings as they are after it
@@ -1132,11 +1146,11 @@
     return rows;
   };
   const ecomSell = async (run, s) => {
-    const prod = s.product, price = prod ? shopPrice(prod) : null, have = (D.warehouses || []).length ? whStock(prod) : null;
+    const X = dash(), prod = s.product, price = prod ? shopPrice(prod) : null, have = X.cash != null ? whStock(prod, X.warehouses || []) : null;   // today's stock: a warehouse the dashboard doesn't show has none
     let qty = Math.floor(s.qty ?? s.qtyMax ?? 0);
     if (have != null && have < qty && have >= (s.qtyMin ?? qty)) qty = Math.floor(have);
     const no = !prod ? "the plan doesn't say which product" : price == null ? `no shop price for ${prod} on the dashboard to copy (selling prices are locked)` : !(qty > 0) ? "the plan gives no amount"
-      : have != null && have < qty ? `only ${n(have)} ${prod} in the warehouses` : "";
+      : have == null ? "can't read today's warehouse stock (the dashboard isn't on screen)" : have < qty ? `only ${n(have)} ${prod} in the warehouses` : "";
     if (no) { mark(s, "skipped", no); return; }
     if (!WEB.post && $id("MENU2_web1")) await readWeb(false);
     if (!WEB.post) { mark(s, "failed", "no + Post link on the Web Market"); oops(run); return; }
@@ -1387,13 +1401,13 @@
 
   /* one pass over the day's plan: its steps in order, a section at a time. Steps done (or tried) earlier today are left out: a
      newer plan for the same day runs again only for steps not tried yet, or for skipped ones once 15 s have passed */
-  const newRec = () => ({done: new Set(), tried: new Set(), skipped: new Set(), b2bProd: new Set(), cost: {}, reports: {}, at: 0, t0: 0, cash0: null, spent: 0, complete: false, stale: 0, staleAt: 0, pass: 0});
+  const newRec = () => ({done: new Set(), tried: new Set(), skipped: new Set(), b2bProd: new Set(), shipSO: new Set(), cost: {}, reports: {}, at: 0, t0: 0, cash0: null, spent: 0, complete: false, stale: 0, staleAt: 0, pass: 0});
   const botSave = () => {   // the real day's record, so a reader pasted again the same day doesn't do the steps again
-    try { const d = today(), r = BOT.days[d]; if (d && r) localStorage.setItem(KEY + ":bot", JSON.stringify({day: d, at: Date.now(), done: [...r.done], tried: [...r.tried], b2bProd: [...r.b2bProd], cost: r.cost, reports: r.reports, cash0: r.cash0, spent: r.spent})); } catch (e) {}
+    try { const d = today(), r = BOT.days[d]; if (d && r) localStorage.setItem(KEY + ":bot", JSON.stringify({day: d, at: Date.now(), done: [...r.done], tried: [...r.tried], b2bProd: [...r.b2bProd], shipSO: [...r.shipSO], cost: r.cost, reports: r.reports, cash0: r.cash0, spent: r.spent})); } catch (e) {}
   };
   try {   // (only from the last 10 minutes: an older one is another game)
     const q = JSON.parse(localStorage.getItem(KEY + ":bot"));
-    if (q && q.day && Date.now() - q.at < 600000) BOT.days[q.day] = Object.assign(newRec(), {done: new Set(q.done), tried: new Set(q.tried), b2bProd: new Set(q.b2bProd || []), cost: q.cost || {}, reports: q.reports || {}, cash0: q.cash0 ?? null, spent: +q.spent || 0});
+    if (q && q.day && Date.now() - q.at < 600000) BOT.days[q.day] = Object.assign(newRec(), {done: new Set(q.done), tried: new Set(q.tried), b2bProd: new Set(q.b2bProd || []), shipSO: new Set(q.shipSO || []), cost: q.cost || {}, reports: q.reports || {}, cash0: q.cash0 ?? null, spent: +q.spent || 0});
   } catch (e) {}
   const botDay = async (day, plan) => {
     const key = dayKey(day), rec = BOT.days[key] = BOT.days[key] || newRec();
@@ -1440,7 +1454,7 @@
     }
     if (!run.stale && live(day)) {   // then the won orders go out, so no late penalty
       botSay(`Day ${day}: shipping B2B orders…`);
-      try { await autoShip(run, rec); } catch (e) { for (const s of steps) if (s.state === "running") { s.unsure = true; mark(s, "failed", e.message); } run.notes.push("Shipping: " + e.message); log("Bot shipping: " + e.message); }
+      try { await autoShip(run, rec); } catch (e) { let f = 0; for (const s of run.steps) if (s.state === "running") { s.unsure = true; mark(s, "failed", e.message); f++; } if (f) oops(run); run.notes.push("Shipping: " + e.message); log("Bot shipping: " + e.message); }
     }
     for (const s of steps) {
       if (!s.state) mark(s, "skipped", run.stale ? "waiting for a plan that matches the game" : today() !== day ? "the day ended first" : "the bot was stopped", false);

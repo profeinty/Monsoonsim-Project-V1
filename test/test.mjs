@@ -301,6 +301,16 @@ const pane = p => p.evaluate(new Function(`return ${sh('[data-f="bot"]')}.innerT
   check("Q2 no page errors", !errs.length, errs.join("; "));
   await ctx.close();
 }
+{ // Q3: the game refuses the shipping: 2 failed shipments in a row stop the bot (like any 2 failed steps)
+  const {ctx, p, errs} = await open("B2BECM_SOS_ALLOC_FAST", MEM, "&so=1");
+  await p.evaluate(() => window.__ff.orders());
+  await p.evaluate(pl => window.__ff.plan(pl), {...PLAN, steps: []});
+  await click(p, '[data-bot="go"]'); await runDone(p);
+  const S = await p.evaluate(() => window.__ff.bot.run.steps.map(s => ({id: s.id, st: s.state, why: s.why}))), on = await p.evaluate(() => window.__ff.bot.on), L = await server();
+  check("Q3 2 failed shipments stop the bot", !on && S.filter(s => /^auto:/.test(s.id) && s.st === "failed").length === 2 && L.log.filter(x => x.m === "POST" && x.cmd === "B2BECM_SOS_ALLOC_FAST").length === 2, JSON.stringify(S));
+  check("Q3 no page errors", !errs.length, errs.join("; "));
+  await ctx.close();
+}
 { // R: machines: buy as many as the floor space and the budget allow, one a submit; production order; what a machine makes is left to the user
   const {ctx, p, errs} = await open("", MEM, "&wfg=1&cash=5000000");
   await p.evaluate(pl => window.__ff.plan(pl), {...PLAN, budgets: {...PLAN.budgets, machine: 1300000}, steps: [
