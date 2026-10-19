@@ -10,4 +10,6 @@ Fail modes on the server: `?fail=<CMD>` (the game refuses), `COD` (cash on deliv
 
 Cases: A full plan run for real, B practice run (nothing sent), C screen check, D Start opens the calculator (`calc-stub.html`) and runs its plan, E the game refuses an order, F cash on delivery, G plan doesn't match the game's cash, H release, shrink, vendor price and B2B limits, I below the bulk lot price, J lost answer counted as bought, M reader loaded again the same day sends nothing twice, N Run by itself starts the bot with no click, P bid history with every team's price (Load More), Q shipping won and web orders exactly as the game's page does, Q2 practice and autoShip off ship nothing, Q3 2 refused shipments stop the bot, R machines fit the floor and the budget, R2 production and machine status, S Web Market buys and our own post at the shop price, S2 a post leaves what won orders need.
 
-Result for reader v9: all 122 checks pass; a 15-step day takes about 26 s.
+Result for reader v9: all 125 checks pass; a 15-step day takes about 26 s.
+
+`node test/e2e-calc.mjs 8791` runs the real calculator (`calc/index.html`, unlocked with a test passcode on that browser only) with the bot on the stand-in game: Start opens it, it makes the day's plan and the bot runs it. It fails on page errors, a price or cancel command, or a step the bot doesn't know or fails.
